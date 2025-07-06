@@ -141,10 +141,16 @@ class ForexApp:
         debug_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.debug_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        # Setze den Debug-Callback für den SignalAnalyzer einmalig nach Initialisierung der GUI-Komponenten
+        analyzer_set_debug_callback(self.log_message)
         self.log_message("ForexApp GUI initialisiert und Layout erstellt.")
 
+
     def log_message(self, message):
-        """Schreibt eine Nachricht in das Debug-Textfeld."""
+        """Schreibt eine Nachricht in das Debug-Textfeld und die Konsole."""
+        # Print to console as well for reliable full log
+        print(f"[GUI DEBUG] {message}")
+
         if self.debug_text:
             self.debug_text.config(state=tk.NORMAL)
             self.debug_text.insert(tk.END, message + "\n")
@@ -152,7 +158,8 @@ class ForexApp:
             self.debug_text.config(state=tk.DISABLED)
 
         # Setze den Debug-Callback für den SignalAnalyzer
-        analyzer_set_debug_callback(self.log_message)
+        # This should only be done once, perhaps in __init__ after debug_text is created.
+        # analyzer_set_debug_callback(self.log_message) # Moved to __init__
 
 
     def get_selected_forex_pair_config(self):
@@ -279,7 +286,7 @@ class ForexApp:
 
                     # Reindex GDP signal to Forex data frequency
                     self.gdp_momentum_signal_aligned_to_forex = gdp_signal_raw.reindex(self.forex_data_df.index, method='ffill')
-                    self.gdp_momentum_signal_aligned_to_forex.fillna(method='bfill', inplace=True) # Fülle auch am Anfang, falls GDP-Daten später starten
+                    self.gdp_momentum_signal_aligned_to_forex.bfill(inplace=True) # Fülle auch am Anfang, falls GDP-Daten später starten (Modern pandas)
                     self.gdp_momentum_signal_aligned_to_forex.fillna(0, inplace=True) # Falls immer noch NaNs, mit 0 füllen (neutral)
                                                                                         # Wichtig: Konvertiere 'long'/'short' zu 0, falls sie nicht durch ffill/bfill ersetzt wurden.
                                                                                         # Die Umwandlung in numerisch (1, -1, 0) passiert in generiere_signale.
