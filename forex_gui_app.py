@@ -81,13 +81,13 @@ class ForexApp:
         self.end_date_var.set(end_date_default.strftime("%Y-%m-%d"))
 
         # Indikator-Grenzwerte
-        ttk.Label(input_frame, text="Saisonalität Kauf-Schwelle (% mtl. Return):").grid(row=3, column=0, padx=5, pady=5, sticky=tk.W)
-        self.saison_kauf_var = tk.StringVar(value="0.05") # Standardwert als String
+        ttk.Label(input_frame, text="Saisonalität Kauf-Schwelle (% wöch. Return):").grid(row=3, column=0, padx=5, pady=5, sticky=tk.W) # Geändert zu wöch.
+        self.saison_kauf_var = tk.StringVar(value="0.01") # Standardwert angepasst für wöchentliche Basis
         self.saison_kauf_entry = ttk.Entry(input_frame, textvariable=self.saison_kauf_var, width=18)
         self.saison_kauf_entry.grid(row=3, column=1, padx=5, pady=5, sticky=tk.EW)
 
-        ttk.Label(input_frame, text="Saisonalität Verkauf-Schwelle (% mtl. Return):").grid(row=4, column=0, padx=5, pady=5, sticky=tk.W)
-        self.saison_verkauf_var = tk.StringVar(value="-0.05") # Standardwert als String
+        ttk.Label(input_frame, text="Saisonalität Verkauf-Schwelle (% wöch. Return):").grid(row=4, column=0, padx=5, pady=5, sticky=tk.W) # Geändert zu wöch.
+        self.saison_verkauf_var = tk.StringVar(value="-0.01") # Standardwert angepasst für wöchentliche Basis
         self.saison_verkauf_entry = ttk.Entry(input_frame, textvariable=self.saison_verkauf_var, width=18)
         self.saison_verkauf_entry.grid(row=4, column=1, padx=5, pady=5, sticky=tk.EW)
 
