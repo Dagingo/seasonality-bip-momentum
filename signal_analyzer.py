@@ -35,16 +35,16 @@ class SignalAnalyzer:
         # Standard Schwellenwerte, können über config überschrieben werden
         self.schwelle_saisonalitaet_kauf = self.config.get('SCHWELLE_SAISONALITAET_KAUF', 0.0005)
         self.schwelle_saisonalitaet_verkauf = self.config.get('SCHWELLE_SAISONALITAET_VERKAUF', -0.0005)
-        self.schwelle_bip_momentum_kauf = self.config.get('SCHWELLE_BIP_MOMENTUM_KAUF', 0.1) # Standard-Schwellenwert Kauf
-        self.schwelle_bip_momentum_verkauf = self.config.get('SCHWELLE_BIP_MOMENTUM_VERKAUF', 0.1) # Standard-Schwellenwert Verkauf (als positive Zahl, Logik umkehren)
-
+        # Entferne alte BIP Momentum Schwellenwerte
+        # self.schwelle_bip_momentum_kauf = self.config.get('SCHWELLE_BIP_MOMENTUM_KAUF', 0.1)
+        # self.schwelle_bip_momentum_verkauf = self.config.get('SCHWELLE_BIP_MOMENTUM_VERKAUF', 0.1)
 
         # Spaltennamen, die für die Analyse erwartet werden
         self.PRICE_COLUMN = 'Schlusskurs' # Standardname für die Preissplate in Forex-Daten
-        # BIP-Spaltennamen werden dynamisch übergeben
+        # BIP-Spaltennamen werden dynamisch übergeben (bleibt relevant für Datenabruf)
         debug_print("SignalAnalyzer initialisiert.")
         debug_print(f"Saisonalität Kauf-Schwelle: {self.schwelle_saisonalitaet_kauf}, Verkauf-Schwelle: {self.schwelle_saisonalitaet_verkauf}")
-        debug_print(f"BIP Momentum Kauf-Schwelle: {self.schwelle_bip_momentum_kauf}, Verkauf-Schwelle: {self.schwelle_bip_momentum_verkauf}")
+        # debug_print(f"BIP Momentum Kauf-Schwelle: {self.schwelle_bip_momentum_kauf}, Verkauf-Schwelle: {self.schwelle_bip_momentum_verkauf}") # Entfernt
 
 
     def berechne_saisonalitaet(self, forex_daten):
@@ -184,60 +184,97 @@ class SignalAnalyzer:
 
         return bip_momentum_signal_raw
 
-    def generiere_signale(self, forex_daten_idx, saisonalitaet_raw, bip_momentum_signal_aligned):
+    # Die Methode berechne_bip_momentum wird entfernt, da sie durch compare_gdp_momentum ersetzt wird.
+    # def berechne_bip_momentum(self, bip_daten, bip_col_country1, bip_col_country2):
+    #     ... (alter Code) ...
+
+
+    def generiere_signale(self, forex_daten_idx, saisonalitaet_raw, gdp_momentum_signal_aligned):
         """
-        Kombiniert Signale. forex_daten_idx wird nur für den finalen Index benötigt.
+        Kombiniert Signale aus Saisonalität und dem neuen GDP-Momentum-Signal.
+        forex_daten_idx wird für den finalen Index benötigt.
+        gdp_momentum_signal_aligned: Die Signal-Serie ('long', 'short', None) von compare_gdp_momentum,
+                                     ausgerichtet auf den Forex-Datenindex.
         """
         debug_print("Beginne Generierung finaler Signale...")
         debug_print("Eingang Saisonalität (roh):", saisonalitaet_raw)
-        debug_print("Eingang BIP-Momentum (ausgerichtet):", bip_momentum_signal_aligned)
+        debug_print("Eingang GDP-Momentum-Signal (ausgerichtet):", gdp_momentum_signal_aligned)
 
         # Stelle sicher, dass alle Zeitreihen denselben Index haben oder angleichen
-        common_index = saisonalitaet_raw.index.intersection(bip_momentum_signal_aligned.index)
+        # gdp_momentum_signal_aligned sollte bereits auf forex_daten_idx ausgerichtet sein.
+        common_index = saisonalitaet_raw.index.intersection(gdp_momentum_signal_aligned.index)
 
         if common_index.empty:
-            debug_print("Kein gemeinsamer Index zwischen Saisonalität und BIP-Signal.")
+            debug_print("Kein gemeinsamer Index zwischen Saisonalität und GDP-Momentum-Signal.")
             return pd.Series(index=forex_daten_idx, data=0, name="Signal")
 
         saisonalitaet = saisonalitaet_raw.reindex(common_index).fillna(0)
-        bip_signal = bip_momentum_signal_aligned.reindex(common_index).fillna(0)
+        # Konvertiere 'long'/'short'/None zu 1/-1/0 für die Kombination
+        gdp_signal_numeric = pd.Series(index=common_index, data=0, dtype=int)
+        gdp_signal_numeric[gdp_momentum_signal_aligned.reindex(common_index) == 'long'] = 1
+        gdp_signal_numeric[gdp_momentum_signal_aligned.reindex(common_index) == 'short'] = -1
 
-        saison_signal = pd.Series(index=common_index, data=0, name="Saison_Signal_Interpretiert")
-        saison_signal[saisonalitaet > self.schwelle_saisonalitaet_kauf] = 1
-        saison_signal[saisonalitaet < self.schwelle_saisonalitaet_verkauf] = -1
-        debug_print("Interpretiertes Saisonalitätssignal:", saison_signal)
-        if not saison_signal.empty:
-            debug_print(f"Verteilung Saisonalitätssignal (interpretiert):\n{saison_signal.value_counts(dropna=False)}")
+        debug_print("Numerisches GDP-Momentum-Signal (1=long, -1=short, 0=none):", gdp_signal_numeric)
 
 
-        final_signal = pd.Series(index=common_index, data=0, name="Signal")
-        cond_kauf_stark = (saison_signal == 1) & (bip_signal == 1)
-        cond_kauf_saison_primär = (saison_signal == 1) & (bip_signal == 0)
-        cond_kauf_bip_primär = (saison_signal == 0) & (bip_signal == 1)
-        final_signal[cond_kauf_stark | cond_kauf_saison_primär | cond_kauf_bip_primär] = 1
+        saison_signal_numeric = pd.Series(index=common_index, data=0, name="Saison_Signal_Interpretiert", dtype=int)
+        saison_signal_numeric[saisonalitaet > self.schwelle_saisonalitaet_kauf] = 1
+        saison_signal_numeric[saisonalitaet < self.schwelle_saisonalitaet_verkauf] = -1
+        debug_print("Interpretiertes Saisonalitätssignal (numerisch):", saison_signal_numeric)
+        if not saison_signal_numeric.empty: # Geändert von saison_signal zu saison_signal_numeric
+            debug_print(f"Verteilung Saisonalitätssignal (interpretiert):\n{saison_signal_numeric.value_counts(dropna=False)}")
 
-        cond_verkauf_stark = (saison_signal == -1) & (bip_signal == -1)
-        cond_verkauf_saison_primär = (saison_signal == -1) & (bip_signal == 0)
-        cond_verkauf_bip_primär = (saison_signal == 0) & (bip_signal == -1)
-        final_signal[cond_verkauf_stark | cond_verkauf_saison_primär | cond_verkauf_bip_primär] = -1
+
+        final_signal = pd.Series(index=common_index, data=0, name="Signal", dtype=int)
+        # Logik: Signal, wenn beide Indikatoren in die gleiche Richtung zeigen oder einer neutral ist
+        # Kauf, wenn (Saison=Kauf UND GDP=Long) ODER (Saison=Kauf UND GDP=Neutral) ODER (Saison=Neutral UND GDP=Long)
+        cond_kauf = ((saison_signal_numeric == 1) & (gdp_signal_numeric == 1)) | \
+                    ((saison_signal_numeric == 1) & (gdp_signal_numeric == 0)) | \
+                    ((saison_signal_numeric == 0) & (gdp_signal_numeric == 1))
+        final_signal[cond_kauf] = 1
+
+        # Verkauf, wenn (Saison=Verkauf UND GDP=Short) ODER (Saison=Verkauf UND GDP=Neutral) ODER (Saison=Neutral UND GDP=Short)
+        cond_verkauf = ((saison_signal_numeric == -1) & (gdp_signal_numeric == -1)) | \
+                       ((saison_signal_numeric == -1) & (gdp_signal_numeric == 0)) | \
+                       ((saison_signal_numeric == 0) & (gdp_signal_numeric == -1))
+        final_signal[cond_verkauf] = -1
+
+        # Strenge Logik (optional, aktuell nicht verwendet): Nur wenn beide zustimmen
+        # cond_kauf_stark = (saison_signal_numeric == 1) & (gdp_signal_numeric == 1)
+        # final_signal[cond_kauf_stark] = 1
+        # cond_verkauf_stark = (saison_signal_numeric == -1) & (gdp_signal_numeric == -1)
+        # final_signal[cond_verkauf_stark] = -1
+
 
         # Reindex auf den ursprünglichen Forex-Daten-Index, um sicherzustellen, dass alle Datenpunkte abgedeckt sind
-        final_signal = final_signal.reindex(forex_daten_idx).fillna(0)
+        final_signal = final_signal.reindex(forex_daten_idx).fillna(0) # ffill() könnte hier auch Sinn machen, je nach Anforderung
         debug_print("Finale kombinierte Signale:", final_signal)
         if not final_signal.empty:
             debug_print(f"Verteilung finale Signale:\n{final_signal.value_counts(dropna=False)}")
 
         return final_signal
 
-    def plot_analyse_results(self, fig, forex_daten, saisonalitaet_values, bip_roh_daten, bip_aligned_signal, final_signale, bip_col_country1, bip_col_country2):
+    def plot_analyse_results(self, fig, forex_daten, saisonalitaet_values,
+                             bip_roh_daten, # Bleibt für Rohdaten-Plot
+                             gdp_momentum_outputs, # Tupel von compare_gdp_momentum
+                             final_signale, bip_col_country1, bip_col_country2,
+                             gdp_diff_long_thresh, gdp_diff_short_thresh # Neue Schwellenwerte für Legende
+                             ):
         """
         Zeichnet die Analyseergebnisse auf die übergebene Matplotlib-Figur.
         fig: Eine Matplotlib-Figur, auf der gezeichnet wird.
+        gdp_momentum_outputs: Tupel (momentum_a_scaled, momentum_b_scaled, momentum_difference, signal_series)
         """
         debug_print("Starte Visualisierung der Analyseergebnisse...")
         fig.clear() # Alte Zeichnungen entfernen
 
         ax = fig.subplots(3, 1, sharex=True) # Erstellt Subplots auf der Figur
+
+        # Unpack gdp_momentum_outputs, falls vorhanden
+        gdp_mom_a, gdp_mom_b, gdp_mom_diff, gdp_signal_raw = (None, None, None, None)
+        if gdp_momentum_outputs:
+            gdp_mom_a, gdp_mom_b, gdp_mom_diff, gdp_signal_raw = gdp_momentum_outputs
+
 
         # Plot 1: Forex-Kurse und Signale
         ax1 = ax[0]
@@ -278,72 +315,64 @@ class SignalAnalyzer:
         ax2.legend(loc='upper left')
         ax2.grid(True)
 
-        # Plot 3: BIP Momentum Signal und Rohdaten
+        # Plot 3: GDP Momentum Daten
         ax3 = ax[2]
-        if bip_aligned_signal is not None and not bip_aligned_signal.empty:
-            ax3.plot(bip_aligned_signal.index, bip_aligned_signal, label='BIP Momentum Signal (ausgerichtet)', color='purple', linestyle='-')
+        handles_ax3 = []
+        labels_ax3 = []
 
-            if bip_roh_daten is not None and not bip_roh_daten.empty:
-                ax3_twin = ax3.twinx()
-                if bip_col_country1 in bip_roh_daten.columns:
-                     ax3_twin.plot(bip_roh_daten.index, bip_roh_daten[bip_col_country1], label=f'BIP {bip_col_country1} (roh)', color='mediumturquoise', alpha=0.5, linestyle='--')
-                if bip_col_country2 in bip_roh_daten.columns:
-                     ax3_twin.plot(bip_roh_daten.index, bip_roh_daten[bip_col_country2], label=f'BIP {bip_col_country2} (roh)', color='lightcoral', alpha=0.5, linestyle='--')
-                ax3_twin.set_ylabel('BIP Rohwerte')
-                lines, labels = ax3.get_legend_handles_labels()
-                lines2, labels2 = ax3_twin.get_legend_handles_labels()
-                # Hinzufügen der Schwellenwerte zur Legende, falls vorhanden
-                # Erzeuge Dummy-Linien für die Legende, da die Schwellenwerte nicht direkt als Linien im Plot sind
-                from matplotlib.lines import Line2D
-                dummy_lines = [Line2D([0], [0], linestyle="none", marker="") for _ in range(2)]
-                labels.extend([
-                    f"BIP Kauf Schw: {self.schwelle_bip_momentum_kauf:.2f}",
-                    f"BIP Verk Schw: {self.schwelle_bip_momentum_verkauf:.2f}"
-                ])
-                all_lines = lines + lines2
-                all_labels = labels + labels2 # labels enthält jetzt auch die Schwellenwerte-Texte
-                # Entferne die Dummy-Einträge, falls die BIP-Linien schon da sind, oder füge sie hinzu
-                # Dies ist etwas knifflig, da die Schwellenwerte keine eigenen 'handles' haben.
-                # Einfacher: Füge es dem Titel hinzu oder als Textannotation.
+        # Verwende gdp_mom_a, gdp_mom_b, gdp_mom_diff aus gdp_momentum_outputs
+        if gdp_mom_diff is not None and not gdp_mom_diff.empty:
+            line1, = ax3.plot(gdp_mom_diff.index, gdp_mom_diff, label='GDP Mom. Diff (A-B, skaliert)', color='purple', linestyle='-')
+            handles_ax3.append(line1)
+            labels_ax3.append('GDP Mom. Diff (A-B, skaliert)')
 
-                # Alternative: Text-Annotation oder Titel-Erweiterung
-                # ax3.legend(lines + lines2, labels + labels2, loc='upper left') # Kombinierte Legende
+            # Plotten der Schwellenwerte für die Differenz
+            line2 = ax3.axhline(gdp_diff_long_thresh, color='darkgreen', linestyle=':', linewidth=1.2, label=f'Long Schwelle ({gdp_diff_long_thresh:.1f})')
+            line3 = ax3.axhline(gdp_diff_short_thresh, color='darkred', linestyle=':', linewidth=1.2, label=f'Short Schwelle ({gdp_diff_short_thresh:.1f})')
+            # Manuelles Hinzufügen zur Legende, da axhline keine Handles/Labels automatisch hinzufügt, die von ax3.legend() erfasst werden
+            handles_ax3.extend([line2, line3])
+            labels_ax3.extend([f'Long Schwelle ({gdp_diff_long_thresh:.1f})', f'Short Schwelle ({gdp_diff_short_thresh:.1f})'])
 
-                # Füge Schwellenwerte der Legende hinzu
-                # Erstelle benutzerdefinierte Legendenelemente für die Schwellenwerte
-                handles = lines + lines2
-                new_labels = labels + labels2 # labels enthält die ursprünglichen Labels der gezeichneten Linien
+            # Optional: Plotten der einzelnen skalierten Momentum-Werte
+            if gdp_mom_a is not None and not gdp_mom_a.empty:
+                line_a, = ax3.plot(gdp_mom_a.index, gdp_mom_a, label='GDP Mom. A (skaliert)', color='blue', linestyle='--', alpha=0.7)
+                handles_ax3.append(line_a)
+                labels_ax3.append(f'GDP Mom. {bip_col_country1 or "A"} (skaliert)') # Verwende tatsächliche Ländernamen falls verfügbar
+            if gdp_mom_b is not None and not gdp_mom_b.empty:
+                line_b, = ax3.plot(gdp_mom_b.index, gdp_mom_b, label='GDP Mom. B (skaliert)', color='orange', linestyle='--', alpha=0.7)
+                handles_ax3.append(line_b)
+                labels_ax3.append(f'GDP Mom. {bip_col_country2 or "B"} (skaliert)')
 
-                # Erzeuge unsichtbare Linien für die Text-Labels der Schwellenwerte
-                # Dies ist ein Workaround, um Text zur Legende hinzuzufügen.
-                empty_handle = Line2D([0], [0], marker='None', linestyle='None', label='')
-
-                current_handles, current_labels = ax3.get_legend_handles_labels()
-                if bip_roh_daten is not None and not bip_roh_daten.empty: # Wenn es Twin-Achsen-Handles gibt
-                    twin_handles, twin_labels = ax3_twin.get_legend_handles_labels()
-                    current_handles.extend(twin_handles)
-                    current_labels.extend(twin_labels)
-
-                current_labels.append(f"BIP Kauf Schw: {self.schwelle_bip_momentum_kauf:.2f}")
-                current_handles.append(empty_handle) # Dummy-Handle
-                current_labels.append(f"BIP Verk Schw: {self.schwelle_bip_momentum_verkauf:.2f}")
-                current_handles.append(empty_handle) # Dummy-Handle
-                ax3.legend(current_handles, current_labels, loc='upper left')
-
-            else: # Nur BIP-Signal, keine Rohdaten
-                 current_handles, current_labels = ax3.get_legend_handles_labels()
-                 empty_handle = Line2D([0], [0], marker='None', linestyle='None', label='')
-                 current_labels.append(f"BIP Kauf Schw: {self.schwelle_bip_momentum_kauf:.2f}")
-                 current_handles.append(empty_handle)
-                 current_labels.append(f"BIP Verk Schw: {self.schwelle_bip_momentum_verkauf:.2f}")
-                 current_handles.append(empty_handle)
-                 ax3.legend(current_handles, current_labels, loc='upper left')
+            ax3.set_ylabel('Skaliertes GDP Momentum [-100, 100]')
         else:
-            ax3.text(0.5, 0.5, "Keine BIP-Momentum-Daten", ha='center', va='center', transform=ax3.transAxes)
+            # Fallback, falls keine GDP Momentum Daten vorhanden sind (z.B. wenn compare_gdp_momentum nichts zurückgibt)
+            ax3.text(0.5, 0.5, "Keine GDP Momentum Daten verfügbar", ha='center', va='center', transform=ax3.transAxes)
 
-        ax3.set_title('BIP Momentum Signal und Rohdaten') # Titel bleibt allgemein
+        # Plot Raw BIP data on twin axis (bleibt bestehen)
+        handles_twin_ax3 = []
+        labels_twin_ax3 = []
+        if bip_roh_daten is not None and not bip_roh_daten.empty:
+            ax3_twin = ax3.twinx() # Erzeuge Twin-Achse nur wenn Daten da sind
+            if bip_col_country1 and bip_col_country1 in bip_roh_daten.columns: # Stelle sicher, dass Spaltenname existiert
+                 line_c1, = ax3_twin.plot(bip_roh_daten.index, bip_roh_daten[bip_col_country1], label=f'BIP {bip_col_country1} (roh)', color='mediumturquoise', alpha=0.4, linestyle=':')
+                 handles_twin_ax3.append(line_c1)
+                 labels_twin_ax3.append(f'BIP {bip_col_country1} (roh)')
+            if bip_col_country2 and bip_col_country2 in bip_roh_daten.columns: # Stelle sicher, dass Spaltenname existiert
+                 line_c2, = ax3_twin.plot(bip_roh_daten.index, bip_roh_daten[bip_col_country2], label=f'BIP {bip_col_country2} (roh)', color='lightcoral', alpha=0.4, linestyle=':')
+                 handles_twin_ax3.append(line_c2)
+                 labels_twin_ax3.append(f'BIP {bip_col_country2} (roh)')
+            ax3_twin.set_ylabel('BIP Rohwerte')
+
+        # Kombinierte Legende für ax3 und ax3_twin
+        # Stelle sicher, dass handles_ax3 und labels_ax3 zuerst da sind
+        combined_handles = handles_ax3 + handles_twin_ax3
+        combined_labels = labels_ax3 + labels_twin_ax3
+        if combined_handles: # Nur Legende anzeigen, wenn es etwas zu zeigen gibt
+            ax3.legend(combined_handles, combined_labels, loc='upper left', fontsize='small')
+
+
+        ax3.set_title('GDP Momentum Analyse und BIP Rohdaten')
         ax3.set_xlabel('Datum')
-        ax3.set_ylabel('BIP Momentum Signal (+1, 0, -1)')
         ax3.grid(True)
 
         fig.tight_layout()
@@ -355,5 +384,122 @@ class SignalAnalyzer:
 # PRICE_COLUMN = 'Schlusskurs' # Wird jetzt in der Klasse als self.PRICE_COLUMN definiert
 # SCHWELLE_SAISONALITAET_KAUF = 0.0005 # Wird jetzt in der Klasse als self.schwelle_saisonalitaet_kauf definiert
 # SCHWELLE_SAISONALITAET_VERKAUF = -0.0005 # Wird jetzt in der Klasse als self.schwelle_saisonalitaet_verkauf definiert
+
+
+# Neue Funktion gemäß Anforderung
+def compare_gdp_momentum(gdp_series_a: pd.Series, gdp_series_b: pd.Series,
+                         n_periods_growth: int = 4,
+                         long_threshold: float = 30.0, short_threshold: float = -30.0,
+                         debug_callback=None):
+    """
+    Analysiert und bewertet das BIP-Momentum zweier Staaten oder Regionen normiert.
+
+    Args:
+        gdp_series_a (pd.Series): Zeitreihe (Datum -> BIP-Wert) für Staat A.
+        gdp_series_b (pd.Series): Zeitreihe (Datum -> BIP-Wert) für Staat B.
+        n_periods_growth (int): Anzahl der Perioden für die Wachstumsberechnung (z.B. 4 für YoY bei Quartalsdaten).
+        long_threshold (float): Schwellenwert für Long-Signal auf Basis der skalierten Momentum-Differenz.
+        short_threshold (float): Schwellenwert für Short-Signal auf Basis der skalierten Momentum-Differenz.
+        debug_callback (function, optional): Callback-Funktion für Debug-Ausgaben.
+
+    Returns:
+        tuple: (momentum_a_scaled, momentum_b_scaled, momentum_difference, signal_series)
+               Alle als pandas Series, indexiert wie die synchronisierten Eingangsdaten.
+               Signal-Series enthält 'long', 'short', oder None.
+               Gibt (None, None, None, None) zurück bei schwerwiegenden Datenproblemen.
+    """
+    current_debug_print = debug_callback if debug_callback else debug_print # Nutze globalen Debug-Print, falls keiner übergeben wird
+
+    current_debug_print(f"Starte compare_gdp_momentum für {gdp_series_a.name} und {gdp_series_b.name}")
+    current_debug_print(f"n_periods_growth: {n_periods_growth}, long_threshold: {long_threshold}, short_threshold: {short_threshold}")
+
+    # 1. Datenvorbereitung und Synchronisierung
+    if not isinstance(gdp_series_a.index, pd.DatetimeIndex):
+        gdp_series_a.index = pd.to_datetime(gdp_series_a.index)
+    if not isinstance(gdp_series_b.index, pd.DatetimeIndex):
+        gdp_series_b.index = pd.to_datetime(gdp_series_b.index)
+
+    # Kombiniere die Serien, um einen gemeinsamen Zeitindex zu erhalten und NaN, wo Daten fehlen
+    combined_gdp = pd.DataFrame({'A': gdp_series_a, 'B': gdp_series_b})
+    original_len_a = len(gdp_series_a.dropna())
+    original_len_b = len(gdp_series_b.dropna())
+
+    # Interpolation - nur wenn es Lücken gibt, nicht an den Enden, wo es keine Referenz gibt
+    # Lineare Interpolation ist ein Standardansatz für Zeitreihen
+    combined_gdp_interpolated = combined_gdp.interpolate(method='linear', limit_direction='both')
+
+    # Überprüfe, ob nach Interpolation noch NaNs vorhanden sind (wahrscheinlich an den Rändern)
+    if combined_gdp_interpolated['A'].isnull().any() or combined_gdp_interpolated['B'].isnull().any():
+        current_debug_print("WARNUNG: NaN-Werte in BIP-Daten auch nach Interpolation vorhanden (wahrscheinlich an den Rändern). Dies kann die Wachstumsberechnung beeinflussen.")
+
+    # Entferne Zeilen, wo nach Interpolation immer noch für eine der Serien NaN ist (passiert typischerweise an den Enden, wenn Serien unterschiedlich lang sind)
+    # Dies ist wichtig, bevor .pct_change oder .diff angewendet wird, um Fehler zu vermeiden
+    processed_gdp = combined_gdp_interpolated.dropna()
+
+    if len(processed_gdp) < n_periods_growth + 1: # Brauchen genug Daten für mindestens eine Wachstumsberechnung
+        current_debug_print(f"FEHLER: Nicht genügend überlappende Datenpunkte ({len(processed_gdp)}) nach Synchronisierung und Bereinigung für Wachstumsberechnung mit n_periods_growth={n_periods_growth}.")
+        empty_series = pd.Series(dtype=float)
+        return empty_series, empty_series, empty_series, pd.Series(dtype=object)
+
+
+    # 2. Wachstumsratenberechnung (z.B. Year-over-Year)
+    # (Wert_aktuell / Wert_vor_n_perioden) - 1
+    gdp_growth_a = (processed_gdp['A'] / processed_gdp['A'].shift(n_periods_growth)) - 1
+    gdp_growth_b = (processed_gdp['B'] / processed_gdp['B'].shift(n_periods_growth)) - 1
+
+    # Entferne NaNs, die durch .shift() am Anfang der Serie entstehen
+    gdp_growth_a = gdp_growth_a.dropna()
+    gdp_growth_b = gdp_growth_b.dropna()
+
+    # Erneut ausrichten, falls eine Serie nach dropna kürzer ist
+    growth_df = pd.DataFrame({'growth_A': gdp_growth_a, 'growth_B': gdp_growth_b}).dropna()
+
+    if growth_df.empty:
+        current_debug_print("FEHLER: Keine überlappenden Wachstumsdaten nach Berechnung und Bereinigung.")
+        empty_series = pd.Series(dtype=float)
+        return empty_series, empty_series, empty_series, pd.Series(dtype=object)
+
+    current_debug_print("BIP-Wachstumsraten berechnet (A):", growth_df['growth_A'])
+    current_debug_print("BIP-Wachstumsraten berechnet (B):", growth_df['growth_B'])
+
+    # 3. Min-Max Skalierung der Wachstumsraten auf [-100, 100]
+    # Die Skalierung erfolgt über die gesamte Historie der jeweiligen Wachstumsrate.
+    def min_max_scale_series(series, out_min=-100, out_max=100):
+        """Skaliert eine Pandas Series linear auf den Bereich [out_min, out_max]."""
+        min_val = series.min()
+        max_val = series.max()
+        if pd.isna(min_val) or pd.isna(max_val) or min_val == max_val:
+            # Wenn keine Varianz oder nur NaNs, returniere eine Serie von Nullen (oder Mittelwert des Zielbereichs)
+            current_debug_print(f"WARNUNG: Min-Max-Skalierung für '{series.name}' nicht möglich (min={min_val}, max={max_val}). Gebe Nullen zurück.")
+            return pd.Series(0, index=series.index, name=series.name + "_scaled")
+
+        # y = (y_max - y_min) * (x - x_min) / (x_max - x_min) + y_min
+        scaled_series = (out_max - out_min) * (series - min_val) / (max_val - min_val) + out_min
+        return scaled_series.rename(series.name + "_scaled")
+
+    momentum_a_scaled = min_max_scale_series(growth_df['growth_A'])
+    momentum_b_scaled = min_max_scale_series(growth_df['growth_B'])
+
+    current_debug_print("Skalierte Momentum-Werte (A):", momentum_a_scaled)
+    current_debug_print("Skalierte Momentum-Werte (B):", momentum_b_scaled)
+
+    # 4. Differenz der skalierten Momentum-Werte berechnen
+    momentum_difference = (momentum_a_scaled - momentum_b_scaled).rename("Momentum_Difference")
+    current_debug_print("Momentum-Differenz (A - B, skaliert):", momentum_difference)
+
+    # 5. Signallogik anwenden
+    # Initialisiere die Signal-Serie mit None (oder np.nan, dann konvertieren)
+    signal_series = pd.Series(index=momentum_difference.index, dtype=object, name="Signal")
+
+    # Long-Signal Bedingung
+    signal_series[momentum_difference > long_threshold] = 'long'
+    # Short-Signal Bedingung
+    signal_series[momentum_difference < short_threshold] = 'short'
+    # Kein Signal (bleibt None oder NaN, was in Ordnung ist)
+
+    current_debug_print("Generierte Signale:", signal_series[signal_series.notna()]) # Zeige nur tatsächliche Signale
+
+    return momentum_a_scaled, momentum_b_scaled, momentum_difference, signal_series
+
 
 print("SignalAnalyzer Modul geladen.") # Temporärer Debug-Print

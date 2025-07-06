@@ -37,6 +37,9 @@ class ForexApp:
         self.final_signals_series = None
         self.bip_plot_col_country1 = None # Für die Legende im Plot
         self.bip_plot_col_country2 = None
+        self.current_gdp_long_thresh = 30.0 # Standardwert, wird von Analyse überschrieben
+        self.current_gdp_short_thresh = -30.0 # Standardwert, wird von Analyse überschrieben
+
 
         # Zugriff auf globale Konfiguration
         self.forex_pairs_config = FOREX_PAIRS_CONFIG
@@ -88,29 +91,29 @@ class ForexApp:
         self.saison_verkauf_entry = ttk.Entry(input_frame, textvariable=self.saison_verkauf_var, width=18)
         self.saison_verkauf_entry.grid(row=4, column=1, padx=5, pady=5, sticky=tk.EW)
 
-        # BIP Momentum Schwellenwerte
-        ttk.Label(input_frame, text="BIP Momentum Kauf-Schwelle (Diff):").grid(row=5, column=0, padx=5, pady=5, sticky=tk.W)
-        self.bip_kauf_schwelle_var = tk.StringVar(value="0.1") # Standardwert
-        self.bip_kauf_schwelle_entry = ttk.Entry(input_frame, textvariable=self.bip_kauf_schwelle_var, width=18)
-        self.bip_kauf_schwelle_entry.grid(row=5, column=1, padx=5, pady=5, sticky=tk.EW)
+        # Neue GDP Momentum Differenz Schwellenwerte
+        ttk.Label(input_frame, text="Long-Schwelle (GDP Diff):").grid(row=5, column=0, padx=5, pady=5, sticky=tk.W)
+        self.gdp_long_schwelle_var = tk.StringVar(value="30.0") # Standardwert
+        self.gdp_long_schwelle_entry = ttk.Entry(input_frame, textvariable=self.gdp_long_schwelle_var, width=18)
+        self.gdp_long_schwelle_entry.grid(row=5, column=1, padx=5, pady=5, sticky=tk.EW)
 
-        ttk.Label(input_frame, text="BIP Momentum Verkauf-Schwelle (Diff):").grid(row=6, column=0, padx=5, pady=5, sticky=tk.W)
-        self.bip_verkauf_schwelle_var = tk.StringVar(value="0.1") # Standardwert
-        self.bip_verkauf_schwelle_entry = ttk.Entry(input_frame, textvariable=self.bip_verkauf_schwelle_var, width=18)
-        self.bip_verkauf_schwelle_entry.grid(row=6, column=1, padx=5, pady=5, sticky=tk.EW)
+        ttk.Label(input_frame, text="Short-Schwelle (GDP Diff):").grid(row=6, column=0, padx=5, pady=5, sticky=tk.W)
+        self.gdp_short_schwelle_var = tk.StringVar(value="-30.0") # Standardwert
+        self.gdp_short_schwelle_entry = ttk.Entry(input_frame, textvariable=self.gdp_short_schwelle_var, width=18)
+        self.gdp_short_schwelle_entry.grid(row=6, column=1, padx=5, pady=5, sticky=tk.EW)
 
         # Analyse-Button
         self.analyse_button = ttk.Button(input_frame, text="Analyse starten", command=self.start_analyse_thread)
-        self.analyse_button.grid(row=7, column=0, columnspan=2, padx=5, pady=10, sticky=tk.EW)
+        self.analyse_button.grid(row=7, column=0, columnspan=2, padx=5, pady=10, sticky=tk.EW) # Row index bleibt gleich da alte Felder ersetzt wurden
 
         # Fortschrittsanzeige (ProgressBar)
         self.progress_bar = ttk.Progressbar(input_frame, mode='indeterminate')
-        self.progress_bar.grid(row=8, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+        self.progress_bar.grid(row=8, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW) # Row index bleibt gleich
 
         # Status Label
         self.status_var = tk.StringVar(value="Bereit.")
         self.status_label = ttk.Label(input_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        self.status_label.grid(row=9, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+        self.status_label.grid(row=9, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW) # Row index bleibt gleich
 
         # --- Frame für Plot und Debug-Konsole (rechts neben Eingabe) ---
         output_frame = ttk.Frame(main_frame)
@@ -189,15 +192,15 @@ class ForexApp:
 
             saison_kauf_schwelle = float(self.saison_kauf_var.get()) / 100.0 # Umrechnung von % in Dezimal
             saison_verkauf_schwelle = float(self.saison_verkauf_var.get()) / 100.0 # Umrechnung von % in Dezimal
-            bip_kauf_schwelle = float(self.bip_kauf_schwelle_var.get())
-            bip_verkauf_schwelle = float(self.bip_verkauf_schwelle_var.get())
+            # Lese neue GDP Differenz Schwellenwerte
+            gdp_long_schwelle = float(self.gdp_long_schwelle_var.get())
+            gdp_short_schwelle = float(self.gdp_short_schwelle_var.get())
 
 
-            analyzer_config = {
+            analyzer_config = { # Nur noch Saisonalitätsschwellen für den Analyzer-Konstruktor
                 'SCHWELLE_SAISONALITAET_KAUF': saison_kauf_schwelle,
-                'SCHWELLE_SAISONALITAET_VERKAUF': saison_verkauf_schwelle,
-                'SCHWELLE_BIP_MOMENTUM_KAUF': bip_kauf_schwelle,
-                'SCHWELLE_BIP_MOMENTUM_VERKAUF': bip_verkauf_schwelle
+                'SCHWELLE_SAISONALITAET_VERKAUF': saison_verkauf_schwelle
+                # Die GDP-Schwellenwerte werden direkt an compare_gdp_momentum übergeben
             }
 
         except ValueError as ve:
@@ -207,16 +210,23 @@ class ForexApp:
 
         # Starte den Analyse-Prozess in einem neuen Thread
         # Das Target `_run_analyse_prozess` muss die gesammelten Parameter erhalten
+        # Füge gdp_long_schwelle und gdp_short_schwelle zu den args hinzu
         analyse_thread = threading.Thread(target=self._run_analyse_prozess,
                                           args=(forex_pair_code, country1, country2, base_curr, quote_curr,
-                                                start_date_str, end_date_str, analyzer_config),
+                                                start_date_str, end_date_str, analyzer_config,
+                                                gdp_long_schwelle, gdp_short_schwelle), # Neue Argumente
                                           daemon=True) # Daemon, damit Thread mit Hauptprogramm schließt
         analyse_thread.start()
 
     def _run_analyse_prozess(self, forex_pair_code, country1, country2, base_curr, quote_curr,
-                             start_date, end_date, analyzer_config_dict):
+                             start_date, end_date, analyzer_config_dict,
+                             gdp_long_threshold, gdp_short_threshold): # Neue Parameter hier
         """Führt den eigentlichen Datenabruf und die Analyse durch (läuft im Thread)."""
         try:
+            # Speichere die aktuellen GDP-Schwellenwerte für den Plot-Aufruf
+            self.current_gdp_long_thresh = gdp_long_threshold
+            self.current_gdp_short_thresh = gdp_short_threshold
+
             self.log_message(f"Datenabruf für {forex_pair_code} ({start_date} bis {end_date}).")
             self.forex_data_df = self.data_manager.get_forex_data(forex_pair_code, start_date, end_date)
 
@@ -232,41 +242,67 @@ class ForexApp:
             self.bip_plot_col_country1 = bip_data_tuple[1] # Speichere die tatsächlichen Spaltennamen für den Plot
             self.bip_plot_col_country2 = bip_data_tuple[2]
 
+            # Store all GDP momentum outputs for plotting
+            self.gdp_momentum_outputs = None # (mom_a, mom_b, diff, signal_series_raw)
+            self.gdp_momentum_signal_aligned_to_forex = pd.Series(index=self.forex_data_df.index, data=0, name="GDP_Momentum_Signal_Aligned")
 
-            if self.bip_data_df is None or self.bip_data_df.empty:
-                self.log_message(f"Keine BIP-Daten für {country1}/{country2} erhalten. Analyse wird ohne BIP-Momentum fortgesetzt (falls möglich) oder abgebrochen.")
-                # Erzeuge eine leere Series für BIP-Momentum, wenn keine BIP-Daten da sind
-                self.bip_aligned_signal_series = pd.Series(index=self.forex_data_df.index, data=0, name="BIP_Momentum_Signal")
+
+            if self.bip_data_df is None or self.bip_data_df.empty or not self.bip_plot_col_country1 or not self.bip_plot_col_country2:
+                self.log_message(f"Keine validen BIP-Daten oder Spaltennamen für {country1}/{country2} erhalten. GDP-Momentum-Analyse wird übersprungen.")
             else:
-                 # Initialisiere SignalAnalyzer mit den GUI-Schwellenwerten
-                self.signal_analyzer = SignalAnalyzer(config=analyzer_config_dict)
+                self.log_message(f"Berechne GDP Momentum Vergleich für {self.bip_plot_col_country1} und {self.bip_plot_col_country2}...")
+                gdp_series_a = self.bip_data_df[self.bip_plot_col_country1]
+                gdp_series_b = self.bip_data_df[self.bip_plot_col_country2]
 
-                bip_momentum_raw = self.signal_analyzer.berechne_bip_momentum(self.bip_data_df,
-                                                                              self.bip_plot_col_country1,
-                                                                              self.bip_plot_col_country2)
-                if not bip_momentum_raw.empty:
-                    self.bip_aligned_signal_series = bip_momentum_raw.reindex(self.forex_data_df.index, method='ffill')
-                    self.bip_aligned_signal_series.fillna(0, inplace=True)
-                    self.bip_aligned_signal_series.name = "BIP_Momentum_Signal"
+                # N_PERIODS_GROWTH: Annahme ist 4 für YoY bei Quartalsdaten. Dies könnte man auch konfigurierbar machen.
+                # Fürs Erste hardcoded als 4.
+                n_periods_for_gdp_growth = 4
+
+                # Wichtig: signal_analyzer Modul importieren, falls noch nicht geschehen (ist es aber global)
+                # Die Funktion compare_gdp_momentum ist jetzt im signal_analyzer Modul
+                gdp_mom_a, gdp_mom_b, gdp_mom_diff, gdp_signal_raw = signal_analyzer.compare_gdp_momentum(
+                    gdp_series_a=gdp_series_a,
+                    gdp_series_b=gdp_series_b,
+                    n_periods_growth=n_periods_for_gdp_growth, # z.B. 4 für YoY bei Quartalsdaten
+                    long_threshold=gdp_long_threshold,
+                    short_threshold=gdp_short_threshold,
+                    debug_callback=self.log_message
+                )
+                self.gdp_momentum_outputs = (gdp_mom_a, gdp_mom_b, gdp_mom_diff, gdp_signal_raw)
+
+                if gdp_signal_raw is not None and not gdp_signal_raw.empty:
+                    self.log_message("GDP Momentum Rohsignale erhalten.")
+                    # self.log_message(f"Momentum A (skaliert):\n{gdp_mom_a.tail().to_string()}")
+                    # self.log_message(f"Momentum B (skaliert):\n{gdp_mom_b.tail().to_string()}")
+                    # self.log_message(f"Momentum Differenz:\n{gdp_mom_diff.tail().to_string()}")
+                    # self.log_message(f"GDP Signale (roh):\n{gdp_signal_raw[gdp_signal_raw.notna()].to_string()}")
+
+                    # Reindex GDP signal to Forex data frequency
+                    self.gdp_momentum_signal_aligned_to_forex = gdp_signal_raw.reindex(self.forex_data_df.index, method='ffill')
+                    self.gdp_momentum_signal_aligned_to_forex.fillna(method='bfill', inplace=True) # Fülle auch am Anfang, falls GDP-Daten später starten
+                    self.gdp_momentum_signal_aligned_to_forex.fillna(0, inplace=True) # Falls immer noch NaNs, mit 0 füllen (neutral)
+                                                                                        # Wichtig: Konvertiere 'long'/'short' zu 0, falls sie nicht durch ffill/bfill ersetzt wurden.
+                                                                                        # Die Umwandlung in numerisch (1, -1, 0) passiert in generiere_signale.
+                    self.gdp_momentum_signal_aligned_to_forex.name = "GDP_Momentum_Signal_Aligned"
+                    self.log_message("GDP Momentum Signale an Forex-Daten Frequenz angeglichen.")
                 else:
-                    self.log_message("BIP-Momentum-Berechnung ergab leeres Signal. Verwende Null-Signal.")
-                    self.bip_aligned_signal_series = pd.Series(index=self.forex_data_df.index, data=0, name="BIP_Momentum_Signal")
+                    self.log_message("Keine GDP Momentum Rohsignale von compare_gdp_momentum erhalten oder Signale sind leer. Verwende neutrales Signal (0).")
 
-
-            # Initialisiere SignalAnalyzer (erneut oder erstmals), falls BIP-Daten vorhanden waren oder nicht
-            if not self.signal_analyzer: # Falls es wegen fehlender BIP-Daten noch nicht initialisiert wurde
-                 self.signal_analyzer = SignalAnalyzer(config=analyzer_config_dict)
-
+            # Initialisiere SignalAnalyzer (hat jetzt keine BIP-spezifischen Schwellen mehr in config)
+            self.signal_analyzer = SignalAnalyzer(config=analyzer_config_dict) # analyzer_config_dict enthält nur Saisonalität
             self.saisonalitaet_series = self.signal_analyzer.berechne_saisonalitaet(self.forex_data_df)
 
-            self.final_signals_series = self.signal_analyzer.generiere_signale(self.forex_data_df.index,
-                                                                               self.saisonalitaet_series,
-                                                                               self.bip_aligned_signal_series)
+            # Generiere finale Signale mit dem neuen gdp_momentum_signal_aligned_to_forex
+            self.final_signals_series = self.signal_analyzer.generiere_signale(
+                forex_daten_idx=self.forex_data_df.index,
+                saisonalitaet_raw=self.saisonalitaet_series,
+                gdp_momentum_signal_aligned=self.gdp_momentum_signal_aligned_to_forex # Hier das neue Signal übergeben
+            )
 
             self.log_message("Analyse abgeschlossen.")
             # GUI-Update im Hauptthread planen (für Plot etc.)
             self.root.after(0, self._analysis_done, "Analyse erfolgreich abgeschlossen.")
-            self.root.after(0, self.update_plot)
+            self.root.after(0, self.update_plot) # update_plot muss angepasst werden, um gdp_momentum_outputs zu verwenden
 
 
         except Exception as e:
@@ -290,8 +326,8 @@ class ForexApp:
             self.end_date_entry,
             self.saison_kauf_entry,
             self.saison_verkauf_entry,
-            self.bip_kauf_schwelle_entry,
-            self.bip_verkauf_schwelle_entry,
+            self.gdp_long_schwelle_entry, # Neu
+            self.gdp_short_schwelle_entry, # Neu
             self.analyse_button
         ]
         for widget in widgets_to_toggle:
@@ -313,11 +349,13 @@ class ForexApp:
                     fig=self.plot_figure,
                     forex_daten=self.forex_data_df,
                     saisonalitaet_values=self.saisonalitaet_series,
-                    bip_roh_daten=self.bip_data_df, # Kann None oder leer sein
-                    bip_aligned_signal=self.bip_aligned_signal_series,
+                    bip_roh_daten=self.bip_data_df,
+                    gdp_momentum_outputs=self.gdp_momentum_outputs, # Übergebe das Tupel
                     final_signale=self.final_signals_series,
-                    bip_col_country1=self.bip_plot_col_country1, # Kann None sein
-                    bip_col_country2=self.bip_plot_col_country2  # Kann None sein
+                    bip_col_country1=self.bip_plot_col_country1,
+                    bip_col_country2=self.bip_plot_col_country2,
+                    gdp_diff_long_thresh=self.current_gdp_long_thresh, # Verwende gespeicherte Werte
+                    gdp_diff_short_thresh=self.current_gdp_short_thresh # Verwende gespeicherte Werte
                 )
                 self.plot_canvas.draw()
                 self.log_message("Plot erfolgreich aktualisiert.")
