@@ -389,10 +389,10 @@ class SignalAnalyzer:
 # Neue Funktion gemäß Anforderung
 def compare_gdp_momentum(gdp_series_a: pd.Series, gdp_series_b: pd.Series,
                          n_periods_growth: int = 4,
-                         long_threshold: float = 30.0, short_threshold: float = -30.0,
-                         debug_callback=None):
+                         long_threshold: float = 30.0, short_threshold: float = -30.0):
     """
     Analysiert und bewertet das BIP-Momentum zweier Staaten oder Regionen normiert.
+    Verwendet die global in signal_analyzer.py gesetzte DEBUG_OUTPUT_CALLBACK Funktion.
 
     Args:
         gdp_series_a (pd.Series): Zeitreihe (Datum -> BIP-Wert) für Staat A.
@@ -400,18 +400,17 @@ def compare_gdp_momentum(gdp_series_a: pd.Series, gdp_series_b: pd.Series,
         n_periods_growth (int): Anzahl der Perioden für die Wachstumsberechnung (z.B. 4 für YoY bei Quartalsdaten).
         long_threshold (float): Schwellenwert für Long-Signal auf Basis der skalierten Momentum-Differenz.
         short_threshold (float): Schwellenwert für Short-Signal auf Basis der skalierten Momentum-Differenz.
-        debug_callback (function, optional): Callback-Funktion für Debug-Ausgaben.
 
     Returns:
         tuple: (momentum_a_scaled, momentum_b_scaled, momentum_difference, signal_series)
                Alle als pandas Series, indexiert wie die synchronisierten Eingangsdaten.
                Signal-Series enthält 'long', 'short', oder None.
-               Gibt (None, None, None, None) zurück bei schwerwiegenden Datenproblemen.
+               Gibt (empty_series, empty_series, empty_series, empty_object_series) zurück bei Datenproblemen.
     """
-    current_debug_print = debug_callback if debug_callback else debug_print # Nutze globalen Debug-Print, falls keiner übergeben wird
+    # current_debug_print = debug_callback if debug_callback else debug_print # Entfernt - nutze globalen debug_print
 
-    current_debug_print(f"Starte compare_gdp_momentum für {gdp_series_a.name} und {gdp_series_b.name}")
-    current_debug_print(f"n_periods_growth: {n_periods_growth}, long_threshold: {long_threshold}, short_threshold: {short_threshold}")
+    debug_print(f"Starte compare_gdp_momentum für {gdp_series_a.name} und {gdp_series_b.name}") # Geändert zu debug_print
+    debug_print(f"n_periods_growth: {n_periods_growth}, long_threshold: {long_threshold}, short_threshold: {short_threshold}") # Geändert zu debug_print
 
     # 1. Datenvorbereitung und Synchronisierung
     if not isinstance(gdp_series_a.index, pd.DatetimeIndex):
@@ -430,14 +429,14 @@ def compare_gdp_momentum(gdp_series_a: pd.Series, gdp_series_b: pd.Series,
 
     # Überprüfe, ob nach Interpolation noch NaNs vorhanden sind (wahrscheinlich an den Rändern)
     if combined_gdp_interpolated['A'].isnull().any() or combined_gdp_interpolated['B'].isnull().any():
-        current_debug_print("WARNUNG: NaN-Werte in BIP-Daten auch nach Interpolation vorhanden (wahrscheinlich an den Rändern). Dies kann die Wachstumsberechnung beeinflussen.")
+        debug_print("WARNUNG: NaN-Werte in BIP-Daten auch nach Interpolation vorhanden (wahrscheinlich an den Rändern). Dies kann die Wachstumsberechnung beeinflussen.") # Geändert zu debug_print
 
     # Entferne Zeilen, wo nach Interpolation immer noch für eine der Serien NaN ist (passiert typischerweise an den Enden, wenn Serien unterschiedlich lang sind)
     # Dies ist wichtig, bevor .pct_change oder .diff angewendet wird, um Fehler zu vermeiden
     processed_gdp = combined_gdp_interpolated.dropna()
 
     if len(processed_gdp) < n_periods_growth + 1: # Brauchen genug Daten für mindestens eine Wachstumsberechnung
-        current_debug_print(f"FEHLER: Nicht genügend überlappende Datenpunkte ({len(processed_gdp)}) nach Synchronisierung und Bereinigung für Wachstumsberechnung mit n_periods_growth={n_periods_growth}.")
+        debug_print(f"FEHLER: Nicht genügend überlappende Datenpunkte ({len(processed_gdp)}) nach Synchronisierung und Bereinigung für Wachstumsberechnung mit n_periods_growth={n_periods_growth}.") # Geändert zu debug_print
         empty_series = pd.Series(dtype=float)
         return empty_series, empty_series, empty_series, pd.Series(dtype=object)
 
@@ -455,12 +454,12 @@ def compare_gdp_momentum(gdp_series_a: pd.Series, gdp_series_b: pd.Series,
     growth_df = pd.DataFrame({'growth_A': gdp_growth_a, 'growth_B': gdp_growth_b}).dropna()
 
     if growth_df.empty:
-        current_debug_print("FEHLER: Keine überlappenden Wachstumsdaten nach Berechnung und Bereinigung.")
+        debug_print("FEHLER: Keine überlappenden Wachstumsdaten nach Berechnung und Bereinigung.") # Geändert zu debug_print
         empty_series = pd.Series(dtype=float)
         return empty_series, empty_series, empty_series, pd.Series(dtype=object)
 
-    current_debug_print("BIP-Wachstumsraten berechnet (A):", growth_df['growth_A'])
-    current_debug_print("BIP-Wachstumsraten berechnet (B):", growth_df['growth_B'])
+    debug_print("BIP-Wachstumsraten berechnet (A):", growth_df['growth_A']) # Geändert zu debug_print
+    debug_print("BIP-Wachstumsraten berechnet (B):", growth_df['growth_B']) # Geändert zu debug_print
 
     # 3. Min-Max Skalierung der Wachstumsraten auf [-100, 100]
     # Die Skalierung erfolgt über die gesamte Historie der jeweiligen Wachstumsrate.
@@ -470,7 +469,7 @@ def compare_gdp_momentum(gdp_series_a: pd.Series, gdp_series_b: pd.Series,
         max_val = series.max()
         if pd.isna(min_val) or pd.isna(max_val) or min_val == max_val:
             # Wenn keine Varianz oder nur NaNs, returniere eine Serie von Nullen (oder Mittelwert des Zielbereichs)
-            current_debug_print(f"WARNUNG: Min-Max-Skalierung für '{series.name}' nicht möglich (min={min_val}, max={max_val}). Gebe Nullen zurück.")
+            debug_print(f"WARNUNG: Min-Max-Skalierung für '{series.name}' nicht möglich (min={min_val}, max={max_val}). Gebe Nullen zurück.") # Geändert zu debug_print
             return pd.Series(0, index=series.index, name=series.name + "_scaled")
 
         # y = (y_max - y_min) * (x - x_min) / (x_max - x_min) + y_min
@@ -480,12 +479,12 @@ def compare_gdp_momentum(gdp_series_a: pd.Series, gdp_series_b: pd.Series,
     momentum_a_scaled = min_max_scale_series(growth_df['growth_A'])
     momentum_b_scaled = min_max_scale_series(growth_df['growth_B'])
 
-    current_debug_print("Skalierte Momentum-Werte (A):", momentum_a_scaled)
-    current_debug_print("Skalierte Momentum-Werte (B):", momentum_b_scaled)
+    debug_print("Skalierte Momentum-Werte (A):", momentum_a_scaled) # Geändert zu debug_print
+    debug_print("Skalierte Momentum-Werte (B):", momentum_b_scaled) # Geändert zu debug_print
 
     # 4. Differenz der skalierten Momentum-Werte berechnen
     momentum_difference = (momentum_a_scaled - momentum_b_scaled).rename("Momentum_Difference")
-    current_debug_print("Momentum-Differenz (A - B, skaliert):", momentum_difference)
+    debug_print("Momentum-Differenz (A - B, skaliert):", momentum_difference) # Geändert zu debug_print
 
     # 5. Signallogik anwenden
     # Initialisiere die Signal-Serie mit None (oder np.nan, dann konvertieren)
@@ -497,7 +496,7 @@ def compare_gdp_momentum(gdp_series_a: pd.Series, gdp_series_b: pd.Series,
     signal_series[momentum_difference < short_threshold] = 'short'
     # Kein Signal (bleibt None oder NaN, was in Ordnung ist)
 
-    current_debug_print("Generierte Signale:", signal_series[signal_series.notna()]) # Zeige nur tatsächliche Signale
+    debug_print("Generierte Signale:", signal_series[signal_series.notna()]) # Geändert zu debug_print, zeige nur tatsächliche Signale
 
     return momentum_a_scaled, momentum_b_scaled, momentum_difference, signal_series
 
