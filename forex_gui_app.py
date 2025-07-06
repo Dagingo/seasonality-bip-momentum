@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime, timedelta
 from data_manager import DataManager # Importieren
-from signal_analyzer import SignalAnalyzer, set_debug_output_callback as analyzer_set_debug_callback
+from signal_analyzer import SignalAnalyzer, set_debug_output_callback as analyzer_set_debug_callback, compare_gdp_momentum
 import threading
 from matplotlib.figure import Figure # Importieren
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg # Importieren
@@ -258,9 +258,9 @@ class ForexApp:
                 # Fürs Erste hardcoded als 4.
                 n_periods_for_gdp_growth = 4
 
-                # Wichtig: signal_analyzer Modul importieren, falls noch nicht geschehen (ist es aber global)
+                # Wichtig: signal_analyzer Modul importieren, falls noch nicht geschehen (ist es aber global) -> compare_gdp_momentum wurde direkt importiert
                 # Die Funktion compare_gdp_momentum ist jetzt im signal_analyzer Modul
-                gdp_mom_a, gdp_mom_b, gdp_mom_diff, gdp_signal_raw = signal_analyzer.compare_gdp_momentum(
+                gdp_mom_a, gdp_mom_b, gdp_mom_diff, gdp_signal_raw = compare_gdp_momentum( # Aufruf ohne Modul-Präfix
                     gdp_series_a=gdp_series_a,
                     gdp_series_b=gdp_series_b,
                     n_periods_growth=n_periods_for_gdp_growth, # z.B. 4 für YoY bei Quartalsdaten
