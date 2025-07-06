@@ -265,8 +265,8 @@ class ForexApp:
                     gdp_series_b=gdp_series_b,
                     n_periods_growth=n_periods_for_gdp_growth, # z.B. 4 für YoY bei Quartalsdaten
                     long_threshold=gdp_long_threshold,
-                    short_threshold=gdp_short_threshold,
-                    debug_callback=self.log_message
+                    short_threshold=gdp_short_threshold
+                    # debug_callback=self.log_message # Entfernt
                 )
                 self.gdp_momentum_outputs = (gdp_mom_a, gdp_mom_b, gdp_mom_diff, gdp_signal_raw)
 
