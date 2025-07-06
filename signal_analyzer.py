@@ -70,53 +70,51 @@ class SignalAnalyzer:
                 debug_print(f"Fehler bei Konvertierung des Forex-Index zu DatetimeIndex: {e}")
                 return pd.Series(dtype=float, name="Saisonalitaet")
 
-        monthly_returns = forex_returns.groupby(forex_daten.index.month)
+        # Umstellung auf wöchentliche Saisonalität
+        # Group by ISO week of year
+        weekly_returns_grouped = forex_returns.groupby(forex_daten.index.isocalendar().week)
 
-        # Debug-Ausgabe für monatliche Returns
-        for name, group in monthly_returns:
+        # Debug-Ausgabe für wöchentliche Returns
+        for week_num, group in weekly_returns_grouped:
            mean_val = group.mean()
-           # Sicherstellen, dass mean_val ein Skalar ist für die Formatierung
-           if isinstance(mean_val, pd.Series):
+           if isinstance(mean_val, pd.Series): # Should not happen with .mean() on a series group but good practice
                mean_val = mean_val.iloc[0] if not mean_val.empty else np.nan
 
-           if pd.notna(mean_val): # Nur drucken, wenn mean_val nicht NaN ist
-               debug_print(f"  Monat {name}: {len(group)} Einträge, Durchschnittlicher Return: {float(mean_val):.4f}", group.head(2))
+           if pd.notna(mean_val):
+               debug_print(f"  Woche {week_num}: {len(group)} Einträge, Durchschnittlicher Return: {float(mean_val):.6f}", group.head(2)) # Increased precision for weekly
            elif not group.dropna().empty:
-               debug_print(f"  Monat {name}: {len(group)} Einträge, Durchschnittlicher Return: NaN (nach Verarbeitung)", group.head(2))
+               debug_print(f"  Woche {week_num}: {len(group)} Einträge, Durchschnittlicher Return: NaN (nach Verarbeitung)", group.head(2))
            else:
-               debug_print(f"  Monat {name}: {len(group)} Einträge, keine validen Returns.", group.head(2))
+               debug_print(f"  Woche {week_num}: {len(group)} Einträge, keine validen Returns.", group.head(2))
 
-        durchschnittliche_monatliche_saisonalitaet = monthly_returns.mean()
-        # Sicherstellen, dass durchschnittliche_monatliche_saisonalitaet eine Series von Skalaren ist
-        if isinstance(durchschnittliche_monatliche_saisonalitaet, pd.DataFrame):
-            if durchschnittliche_monatliche_saisonalitaet.shape[1] == 1:
-                durchschnittliche_monatliche_saisonalitaet = durchschnittliche_monatliche_saisonalitaet.iloc[:, 0]
+        durchschnittliche_woechentliche_saisonalitaet = weekly_returns_grouped.mean()
+
+        # Handle potential DataFrame output if original series name was complex (though unlikely for pct_change)
+        if isinstance(durchschnittliche_woechentliche_saisonalitaet, pd.DataFrame):
+            if durchschnittliche_woechentliche_saisonalitaet.shape[1] == 1:
+                durchschnittliche_woechentliche_saisonalitaet = durchschnittliche_woechentliche_saisonalitaet.iloc[:, 0]
             else:
-                debug_print("FEHLER: `durchschnittliche_monatliche_saisonalitaet` ist ein mehrspaltiges DataFrame, unerwartet.")
-                # Fallback oder Fehlerbehandlung
-                return pd.Series(dtype=float, name="Saisonalitaet")
-        elif isinstance(durchschnittliche_monatliche_saisonalitaet, pd.Series) and isinstance(durchschnittliche_monatliche_saisonalitaet.iloc[0], pd.Series):
-             # Falls die Einträge der Series selbst Series sind (z.B. durch MultiIndex)
-            debug_print("Warnung: Einträge von `durchschnittliche_monatliche_saisonalitaet` sind Series, versuche zu entpacken.")
-            try:
-                durchschnittliche_monatliche_saisonalitaet = durchschnittliche_monatliche_saisonalitaet.apply(lambda s: s.iloc[0] if isinstance(s, pd.Series) and not s.empty else s)
-            except Exception as e:
-                debug_print(f"Fehler beim Entpacken von `durchschnittliche_monatliche_saisonalitaet`: {e}")
+                debug_print("FEHLER: `durchschnittliche_woechentliche_saisonalitaet` ist ein mehrspaltiges DataFrame, unerwartet.")
                 return pd.Series(dtype=float, name="Saisonalitaet")
 
-
-        debug_print("Durchschnittliche monatliche Saisonalität (verarbeitet):", durchschnittliche_monatliche_saisonalitaet)
-
-        saisonalitaet_signal = pd.Series(index=forex_daten.index, dtype=float, name="Saisonalitaet")
-        debug_print("Durchschnittliche monatliche Saisonalität:", durchschnittliche_monatliche_saisonalitaet)
+        debug_print("Durchschnittliche wöchentliche Saisonalität (verarbeitet):", durchschnittliche_woechentliche_saisonalitaet)
 
         saisonalitaet_signal = pd.Series(index=forex_daten.index, dtype=float, name="Saisonalitaet")
-        for monat, avg_saison_wert in durchschnittliche_monatliche_saisonalitaet.items():
-            saisonalitaet_signal[forex_daten.index.month == monat] = avg_saison_wert
 
-        saisonalitaet_signal.fillna(0, inplace=True)
+        # Map average weekly seasonality back to the daily forex data index
+        # Ensure forex_daten.index.isocalendar().week is available
+        if not hasattr(forex_daten.index, 'isocalendar'):
+             debug_print("FEHLER: Forex-Datenindex scheint kein DatetimeIndex mehr zu sein oder isocalendar nicht verfügbar.")
+             return pd.Series(dtype=float, name="Saisonalitaet")
 
-        debug_print("Finale Saisonalitäts-Signal-Serie:", saisonalitaet_signal)
+        forex_week_numbers = forex_daten.index.isocalendar().week
+
+        for week_num, avg_saison_wert in durchschnittliche_woechentliche_saisonalitaet.items():
+            saisonalitaet_signal[forex_week_numbers == week_num] = avg_saison_wert
+
+        saisonalitaet_signal.fillna(0, inplace=True) # Fill any day not covered (e.g. if a week had no returns) with 0
+
+        debug_print("Finale Saisonalitäts-Signal-Serie (wöchentlich):", saisonalitaet_signal)
         if not saisonalitaet_signal.empty:
              debug_print(f"Statistik Saisonalität: Min={saisonalitaet_signal.min():.4f}, Max={saisonalitaet_signal.max():.4f}, Mean={saisonalitaet_signal.mean():.4f}")
 
@@ -226,24 +224,17 @@ class SignalAnalyzer:
 
 
         final_signal = pd.Series(index=common_index, data=0, name="Signal", dtype=int)
-        # Logik: Signal, wenn beide Indikatoren in die gleiche Richtung zeigen oder einer neutral ist
-        # Kauf, wenn (Saison=Kauf UND GDP=Long) ODER (Saison=Kauf UND GDP=Neutral) ODER (Saison=Neutral UND GDP=Long)
-        cond_kauf = ((saison_signal_numeric == 1) & (gdp_signal_numeric == 1)) | \
-                    ((saison_signal_numeric == 1) & (gdp_signal_numeric == 0)) | \
-                    ((saison_signal_numeric == 0) & (gdp_signal_numeric == 1))
-        final_signal[cond_kauf] = 1
+        # Geänderte Logik: Ein Signal wird nur gegeben, wenn BEIDE Indikatoren die jeweiligen Schwellenwerte erreichen (übereinstimmen).
 
-        # Verkauf, wenn (Saison=Verkauf UND GDP=Short) ODER (Saison=Verkauf UND GDP=Neutral) ODER (Saison=Neutral UND GDP=Short)
-        cond_verkauf = ((saison_signal_numeric == -1) & (gdp_signal_numeric == -1)) | \
-                       ((saison_signal_numeric == -1) & (gdp_signal_numeric == 0)) | \
-                       ((saison_signal_numeric == 0) & (gdp_signal_numeric == -1))
-        final_signal[cond_verkauf] = -1
+        # Strenge Kaufbedingung: Saisonalität signalisiert Kauf UND GDP-Momentum signalisiert Long.
+        cond_kauf_stark = (saison_signal_numeric == 1) & (gdp_signal_numeric == 1)
+        final_signal[cond_kauf_stark] = 1
 
-        # Strenge Logik (optional, aktuell nicht verwendet): Nur wenn beide zustimmen
-        # cond_kauf_stark = (saison_signal_numeric == 1) & (gdp_signal_numeric == 1)
-        # final_signal[cond_kauf_stark] = 1
-        # cond_verkauf_stark = (saison_signal_numeric == -1) & (gdp_signal_numeric == -1)
-        # final_signal[cond_verkauf_stark] = -1
+        # Strenge Verkaufsbedingung: Saisonalität signalisiert Verkauf UND GDP-Momentum signalisiert Short.
+        cond_verkauf_stark = (saison_signal_numeric == -1) & (gdp_signal_numeric == -1)
+        final_signal[cond_verkauf_stark] = -1
+
+        # Alle anderen Fälle resultieren in einem neutralen Signal (0), was die Standardinitialisierung ist.
 
 
         # Reindex auf den ursprünglichen Forex-Daten-Index, um sicherzustellen, dass alle Datenpunkte abgedeckt sind
