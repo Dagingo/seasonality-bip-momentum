@@ -19,8 +19,14 @@ Dieses Projekt implementiert einen Forex-Signal-Generator mit einer grafischen B
     *   Fallback auf eine ältere BIP-Datendatei (`bip_data.csv`), falls die primäre CSV nicht verfügbar ist.
 *   **Analyse-Indikatoren:**
     *   **Saisonalität:** Analysiert historische Kursdaten auf monatlicher Basis, um typische saisonale Trends zu identifizieren.
-    *   **BIP-Momentum-Vergleich:** Misst und vergleicht die Veränderungen im BIP-Wachstum zweier Länder (zugehörig zum Währungspaar) über die Zeit, um das Momentum zu bestimmen.
-*   **Signalerzeugung:** Kombiniert die Signale beider Indikatoren zu einem finalen Kauf-, Verkaufs- oder Haltensignal.
+    *   **GDP-Momentum-Vergleich (NEU):**
+        *   Berechnet die Wachstumsraten (z.B. über 4 Quartale für YoY) für die BIP-Zeitreihen zweier Länder/Regionen.
+        *   Normalisiert diese Wachstumsraten für jedes Land separat auf einen skalierten Wert von -100 bis 100 (Min-Max-Skalierung über die Historie der Wachstumsraten).
+        *   Berechnet die Differenz dieser skalierten Momentum-Werte (`momentum_A - momentum_B`).
+        *   Ein Long-Signal wird generiert, wenn diese Differenz einen benutzerdefinierten positiven Schwellenwert (z.B. 30) übersteigt.
+        *   Ein Short-Signal wird generiert, wenn die Differenz einen benutzerdefinierten negativen Schwellenwert (z.B. -30) unterschreitet.
+        *   Die Schwellenwerte für diese Differenz sind in der GUI konfigurierbar.
+*   **Signalerzeugung:** Kombiniert die Signale aus Saisonalität und dem GDP-Momentum-Vergleich zu einem finalen Kauf-, Verkaufs- oder Haltensignal.
 *   **Modularer Aufbau:** Trennung von GUI, Datenmanagement und Analyse-Logik.
 
 ## Struktur des Projekts
@@ -52,8 +58,10 @@ Dieses Projekt implementiert einen Forex-Signal-Generator mit einer grafischen B
     *   Das gewünschte **Forex-Paar** aus dem Dropdown-Menü.
     *   Das **Start- und Enddatum** für die Analyse (Format: JJJJ-MM-TT). Standard ist das letzte Jahr bis heute.
     *   Die **Schwellenwerte für die Saisonalität** (als Prozentwert des monatlichen Returns, z.B. `0.05` für 0.05%).
+    *   Den **Long-Schwellenwert (GDP Diff)**: Positiver Wert (z.B. `30`). Ein Long-Signal vom GDP-Momentum wird ausgelöst, wenn die skalierte Momentum-Differenz (Land A - Land B) diesen Wert übersteigt.
+    *   Den **Short-Schwellenwert (GDP Diff)**: Negativer Wert (z.B. `-30`). Ein Short-Signal vom GDP-Momentum wird ausgelöst, wenn die skalierte Momentum-Differenz diesen Wert unterschreitet.
 3.  Klicke auf den Button **"Analyse starten"**.
-4.  Während der Analyse wird der Fortschritt angezeigt und die Eingabefelder sind gesperrt. Debug-Meldungen erscheinen in der Konsole unten rechts.
+4.  Während der Analyse wird der Fortschritt angezeigt und die Eingabefelder sind gesperrt. Debug-Meldungen erscheinen in der Konsole unten rechts, inklusive der berechneten skalierten Momentum-Werte (A, B), deren Differenz und dem resultierenden GDP-Signal.
 5.  Nach Abschluss der Analyse wird der Chart im Hauptbereich der GUI aktualisiert und zeigt:
     *   Den Forex-Kursverlauf mit markierten Kauf- (grüne Pfeile) und Verkaufssignalen (rote Pfeile).
     *   Den Saisonalitätstrend mit den eingestellten Schwellen.
