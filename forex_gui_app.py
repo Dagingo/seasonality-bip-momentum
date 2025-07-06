@@ -345,11 +345,34 @@ class ForexApp:
         """Aktualisiert den Matplotlib-Chart in der GUI mit den Analyseergebnissen."""
         self.log_message("Aktualisiere Plot mit Analyseergebnissen...")
 
-        if self.signal_analyzer and self.forex_data_df is not None and \
-           self.saisonalitaet_series is not None and \
-           self.bip_aligned_signal_series is not None and \
-           self.final_signals_series is not None:
+        # Detailed check for data availability
+        plot_data_valid = True
+        conditions_to_check = {
+            "self.signal_analyzer object": self.signal_analyzer is not None, # Check instance exists
+            "self.forex_data_df": self.forex_data_df is not None and not self.forex_data_df.empty,
+            "self.saisonalitaet_series": self.saisonalitaet_series is not None and not self.saisonalitaet_series.empty,
+            "self.gdp_momentum_outputs": self.gdp_momentum_outputs is not None,
+            "self.final_signals_series": self.final_signals_series is not None and not self.final_signals_series.empty
+        }
 
+        for name, condition_met in conditions_to_check.items():
+            if not condition_met:
+                self.log_message(f"Plot Update Check: Condition '{name}' is FALSE.")
+                plot_data_valid = False
+
+        if self.gdp_momentum_outputs is not None: # Further check components if gdp_momentum_outputs itself is fine
+            gdp_mom_a, gdp_mom_b, gdp_mom_diff, gdp_signal_raw = self.gdp_momentum_outputs
+            if gdp_mom_diff is None:
+                 self.log_message("Plot Update Check: gdp_momentum_outputs[2] (gdp_mom_diff) is None.")
+                 # This could be a reason plot_analyse_results does not plot GDP section,
+                 # but it shouldn't make plot_data_valid False for the whole plot if other series are fine.
+            elif hasattr(gdp_mom_diff, 'empty') and gdp_mom_diff.empty: # Check if it's a Series and empty
+                 self.log_message("Plot Update Check: gdp_momentum_outputs[2] (gdp_mom_diff) is an empty Series.")
+        else: # This case is already covered by the conditions_to_check if self.gdp_momentum_outputs is None
+            pass
+
+
+        if plot_data_valid:
             try:
                 # Stelle sicher, dass die Figur vor dem Neuzeichnen geleert wird durch plot_analyse_results
                 self.signal_analyzer.plot_analyse_results(
