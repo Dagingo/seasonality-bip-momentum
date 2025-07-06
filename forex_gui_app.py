@@ -88,20 +88,29 @@ class ForexApp:
         self.saison_verkauf_entry = ttk.Entry(input_frame, textvariable=self.saison_verkauf_var, width=18)
         self.saison_verkauf_entry.grid(row=4, column=1, padx=5, pady=5, sticky=tk.EW)
 
-        # (Hinweis zu BIP-Momentum-Schwellenwert bleibt bestehen)
+        # BIP Momentum Schwellenwerte
+        ttk.Label(input_frame, text="BIP Momentum Kauf-Schwelle (Diff):").grid(row=5, column=0, padx=5, pady=5, sticky=tk.W)
+        self.bip_kauf_schwelle_var = tk.StringVar(value="0.1") # Standardwert
+        self.bip_kauf_schwelle_entry = ttk.Entry(input_frame, textvariable=self.bip_kauf_schwelle_var, width=18)
+        self.bip_kauf_schwelle_entry.grid(row=5, column=1, padx=5, pady=5, sticky=tk.EW)
+
+        ttk.Label(input_frame, text="BIP Momentum Verkauf-Schwelle (Diff):").grid(row=6, column=0, padx=5, pady=5, sticky=tk.W)
+        self.bip_verkauf_schwelle_var = tk.StringVar(value="0.1") # Standardwert
+        self.bip_verkauf_schwelle_entry = ttk.Entry(input_frame, textvariable=self.bip_verkauf_schwelle_var, width=18)
+        self.bip_verkauf_schwelle_entry.grid(row=6, column=1, padx=5, pady=5, sticky=tk.EW)
 
         # Analyse-Button
         self.analyse_button = ttk.Button(input_frame, text="Analyse starten", command=self.start_analyse_thread)
-        self.analyse_button.grid(row=5, column=0, columnspan=2, padx=5, pady=10, sticky=tk.EW)
+        self.analyse_button.grid(row=7, column=0, columnspan=2, padx=5, pady=10, sticky=tk.EW)
 
         # Fortschrittsanzeige (ProgressBar)
         self.progress_bar = ttk.Progressbar(input_frame, mode='indeterminate')
-        self.progress_bar.grid(row=6, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+        self.progress_bar.grid(row=8, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
 
         # Status Label
         self.status_var = tk.StringVar(value="Bereit.")
         self.status_label = ttk.Label(input_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        self.status_label.grid(row=7, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+        self.status_label.grid(row=9, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
 
         # --- Frame für Plot und Debug-Konsole (rechts neben Eingabe) ---
         output_frame = ttk.Frame(main_frame)
@@ -112,7 +121,7 @@ class ForexApp:
         plot_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Matplotlib Figure und Canvas erstellen
-        self.plot_figure = Figure(figsize=(8, 6), dpi=100) # Größe anpassen nach Bedarf
+        self.plot_figure = Figure(figsize=(8, 6), dpi=150) # Erhöhte DPI für höhere Auflösung
         self.plot_canvas = FigureCanvasTkAgg(self.plot_figure, master=plot_frame)
         self.canvas_widget = self.plot_canvas.get_tk_widget()
         self.canvas_widget.pack(fill=tk.BOTH, expand=True)
@@ -180,10 +189,15 @@ class ForexApp:
 
             saison_kauf_schwelle = float(self.saison_kauf_var.get()) / 100.0 # Umrechnung von % in Dezimal
             saison_verkauf_schwelle = float(self.saison_verkauf_var.get()) / 100.0 # Umrechnung von % in Dezimal
+            bip_kauf_schwelle = float(self.bip_kauf_schwelle_var.get())
+            bip_verkauf_schwelle = float(self.bip_verkauf_schwelle_var.get())
+
 
             analyzer_config = {
                 'SCHWELLE_SAISONALITAET_KAUF': saison_kauf_schwelle,
-                'SCHWELLE_SAISONALITAET_VERKAUF': saison_verkauf_schwelle
+                'SCHWELLE_SAISONALITAET_VERKAUF': saison_verkauf_schwelle,
+                'SCHWELLE_BIP_MOMENTUM_KAUF': bip_kauf_schwelle,
+                'SCHWELLE_BIP_MOMENTUM_VERKAUF': bip_verkauf_schwelle
             }
 
         except ValueError as ve:
@@ -276,6 +290,8 @@ class ForexApp:
             self.end_date_entry,
             self.saison_kauf_entry,
             self.saison_verkauf_entry,
+            self.bip_kauf_schwelle_entry,
+            self.bip_verkauf_schwelle_entry,
             self.analyse_button
         ]
         for widget in widgets_to_toggle:

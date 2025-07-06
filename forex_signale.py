@@ -1,4 +1,12 @@
 """
+HINWEIS: Dieses Skript stellt eine ältere, eigenständige Version der Signalanalyse dar.
+Die primäre, interaktive und konfigurierbare Analysefunktionalität mit GUI
+befindet sich in `forex_gui_app.py` (GUI-Anwendung) und `signal_analyzer.py` (Kernlogik).
+Dieses Skript verwendet teils hartcodierte Schwellenwerte und beinhaltet nicht alle
+aktuellen Konfigurationsmöglichkeiten des BIP-Momentum-Indikators.
+
+---
+
 Forex Signal Generator
 
 Dieses Programm generiert Kauf- und Verkaufssignale für Forex-Währungspaare

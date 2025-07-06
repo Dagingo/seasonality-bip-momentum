@@ -35,12 +35,16 @@ class SignalAnalyzer:
         # Standard Schwellenwerte, können über config überschrieben werden
         self.schwelle_saisonalitaet_kauf = self.config.get('SCHWELLE_SAISONALITAET_KAUF', 0.0005)
         self.schwelle_saisonalitaet_verkauf = self.config.get('SCHWELLE_SAISONALITAET_VERKAUF', -0.0005)
+        self.schwelle_bip_momentum_kauf = self.config.get('SCHWELLE_BIP_MOMENTUM_KAUF', 0.1) # Standard-Schwellenwert Kauf
+        self.schwelle_bip_momentum_verkauf = self.config.get('SCHWELLE_BIP_MOMENTUM_VERKAUF', 0.1) # Standard-Schwellenwert Verkauf (als positive Zahl, Logik umkehren)
+
 
         # Spaltennamen, die für die Analyse erwartet werden
         self.PRICE_COLUMN = 'Schlusskurs' # Standardname für die Preissplate in Forex-Daten
         # BIP-Spaltennamen werden dynamisch übergeben
         debug_print("SignalAnalyzer initialisiert.")
         debug_print(f"Saisonalität Kauf-Schwelle: {self.schwelle_saisonalitaet_kauf}, Verkauf-Schwelle: {self.schwelle_saisonalitaet_verkauf}")
+        debug_print(f"BIP Momentum Kauf-Schwelle: {self.schwelle_bip_momentum_kauf}, Verkauf-Schwelle: {self.schwelle_bip_momentum_verkauf}")
 
 
     def berechne_saisonalitaet(self, forex_daten):
@@ -163,8 +167,12 @@ class SignalAnalyzer:
 
         # Signal: +1 wenn Momentum A > Momentum B (gut für Währung A / schlecht für Währung B des Paares)
         # Forex-Paar ist typischerweise Basis/Quote. Wenn Basis (Land A) stärker wird, steigt der Kurs -> Kauf Basis/Verkauf Quote.
-        kauf_bedingung = momentum_df['Momentum_A'] > momentum_df['Momentum_B']
-        verkauf_bedingung = momentum_df['Momentum_A'] < momentum_df['Momentum_B']
+        # Kaufbedingung: Momentum A muss um die Kauf-Schwelle stärker sein als Momentum B
+        kauf_bedingung = momentum_df['Momentum_A'] > (momentum_df['Momentum_B'] + self.schwelle_bip_momentum_kauf)
+        # Verkaufsbedingung: Momentum A muss um die Verkauf-Schwelle schwächer sein als Momentum B
+        # (oder Momentum B ist um die Verkauf-Schwelle stärker als Momentum A)
+        verkauf_bedingung = momentum_df['Momentum_A'] < (momentum_df['Momentum_B'] - self.schwelle_bip_momentum_verkauf)
+
 
         bip_momentum_signal_raw = pd.Series(index=momentum_df.index, data=0, name="BIP_Momentum_Signal_Raw", dtype=int)
         bip_momentum_signal_raw[kauf_bedingung] = 1
@@ -284,13 +292,56 @@ class SignalAnalyzer:
                 ax3_twin.set_ylabel('BIP Rohwerte')
                 lines, labels = ax3.get_legend_handles_labels()
                 lines2, labels2 = ax3_twin.get_legend_handles_labels()
-                ax3.legend(lines + lines2, labels + labels2, loc='upper left') # Kombinierte Legende
-            else:
-                 ax3.legend(loc='upper left')
+                # Hinzufügen der Schwellenwerte zur Legende, falls vorhanden
+                # Erzeuge Dummy-Linien für die Legende, da die Schwellenwerte nicht direkt als Linien im Plot sind
+                from matplotlib.lines import Line2D
+                dummy_lines = [Line2D([0], [0], linestyle="none", marker="") for _ in range(2)]
+                labels.extend([
+                    f"BIP Kauf Schw: {self.schwelle_bip_momentum_kauf:.2f}",
+                    f"BIP Verk Schw: {self.schwelle_bip_momentum_verkauf:.2f}"
+                ])
+                all_lines = lines + lines2
+                all_labels = labels + labels2 # labels enthält jetzt auch die Schwellenwerte-Texte
+                # Entferne die Dummy-Einträge, falls die BIP-Linien schon da sind, oder füge sie hinzu
+                # Dies ist etwas knifflig, da die Schwellenwerte keine eigenen 'handles' haben.
+                # Einfacher: Füge es dem Titel hinzu oder als Textannotation.
+
+                # Alternative: Text-Annotation oder Titel-Erweiterung
+                # ax3.legend(lines + lines2, labels + labels2, loc='upper left') # Kombinierte Legende
+
+                # Füge Schwellenwerte der Legende hinzu
+                # Erstelle benutzerdefinierte Legendenelemente für die Schwellenwerte
+                handles = lines + lines2
+                new_labels = labels + labels2 # labels enthält die ursprünglichen Labels der gezeichneten Linien
+
+                # Erzeuge unsichtbare Linien für die Text-Labels der Schwellenwerte
+                # Dies ist ein Workaround, um Text zur Legende hinzuzufügen.
+                empty_handle = Line2D([0], [0], marker='None', linestyle='None', label='')
+
+                current_handles, current_labels = ax3.get_legend_handles_labels()
+                if bip_roh_daten is not None and not bip_roh_daten.empty: # Wenn es Twin-Achsen-Handles gibt
+                    twin_handles, twin_labels = ax3_twin.get_legend_handles_labels()
+                    current_handles.extend(twin_handles)
+                    current_labels.extend(twin_labels)
+
+                current_labels.append(f"BIP Kauf Schw: {self.schwelle_bip_momentum_kauf:.2f}")
+                current_handles.append(empty_handle) # Dummy-Handle
+                current_labels.append(f"BIP Verk Schw: {self.schwelle_bip_momentum_verkauf:.2f}")
+                current_handles.append(empty_handle) # Dummy-Handle
+                ax3.legend(current_handles, current_labels, loc='upper left')
+
+            else: # Nur BIP-Signal, keine Rohdaten
+                 current_handles, current_labels = ax3.get_legend_handles_labels()
+                 empty_handle = Line2D([0], [0], marker='None', linestyle='None', label='')
+                 current_labels.append(f"BIP Kauf Schw: {self.schwelle_bip_momentum_kauf:.2f}")
+                 current_handles.append(empty_handle)
+                 current_labels.append(f"BIP Verk Schw: {self.schwelle_bip_momentum_verkauf:.2f}")
+                 current_handles.append(empty_handle)
+                 ax3.legend(current_handles, current_labels, loc='upper left')
         else:
             ax3.text(0.5, 0.5, "Keine BIP-Momentum-Daten", ha='center', va='center', transform=ax3.transAxes)
 
-        ax3.set_title('BIP Momentum Signal und Rohdaten')
+        ax3.set_title('BIP Momentum Signal und Rohdaten') # Titel bleibt allgemein
         ax3.set_xlabel('Datum')
         ax3.set_ylabel('BIP Momentum Signal (+1, 0, -1)')
         ax3.grid(True)
