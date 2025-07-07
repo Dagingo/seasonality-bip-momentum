@@ -66,11 +66,11 @@ class Backtester:
 
         self.log(f"Lade Forex-Daten für Signalerzeugung ({trading_ticker_yf})...")
         # Daten für Signalerzeugung
-        forex_data_for_signals = self.data_manager.get_historical_price_data(forex_ticker_yf, start_date_str, end_date_str)
+        forex_data_for_signals = self.data_manager.get_historical_price_data(trading_ticker_yf, start_date_str, end_date_str)
         if forex_data_for_signals.empty:
-            self.log(f"Keine Forex-Daten für {forex_ticker_yf} im Zeitraum gefunden. Backtest abgebrochen.")
+            self.log(f"Keine Forex-Daten für {trading_ticker_yf} im Zeitraum gefunden. Backtest abgebrochen.")
             return None, None
-        self.log(f"Forex-Daten für {forex_ticker_yf} geladen: {len(forex_data_for_signals)} Einträge.")
+        self.log(f"Forex-Daten für {trading_ticker_yf} geladen: {len(forex_data_for_signals)} Einträge.")
 
         country1 = forex_pair_config["country1"]
         country2 = forex_pair_config["country2"]
