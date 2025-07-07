@@ -7,6 +7,7 @@ import threading
 from matplotlib.figure import Figure # Importieren
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk # Importieren
 import pandas as pd # Für leere BIP-Series im Fehlerfall in _run_analyse_prozess
+from backtester import Backtester # <--- NEUER IMPORT
 import json # For saving/loading presets
 import os # For checking file existence
 
@@ -140,16 +141,20 @@ class ForexApp:
 
         # Analyse-Button (eine Zeile nach unten verschoben wegen Presets)
         self.analyse_button = ttk.Button(input_frame, text="Analyse starten", command=self.start_analyse_thread)
-        self.analyse_button.grid(row=8, column=0, columnspan=2, padx=5, pady=10, sticky=tk.EW)
+        self.analyse_button.grid(row=8, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+
+        # Backtest-Button
+        self.backtest_button = ttk.Button(input_frame, text="Backtest starten", command=self.start_backtest_thread)
+        self.backtest_button.grid(row=9, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
 
         # Fortschrittsanzeige (ProgressBar)
         self.progress_bar = ttk.Progressbar(input_frame, mode='indeterminate')
-        self.progress_bar.grid(row=9, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+        self.progress_bar.grid(row=10, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
 
         # Status Label
         self.status_var = tk.StringVar(value="Bereit.")
         self.status_label = ttk.Label(input_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        self.status_label.grid(row=10, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+        self.status_label.grid(row=11, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
 
         # --- Frame für Plot und Debug-Konsole (rechts neben Eingabe) ---
         output_frame = ttk.Frame(main_frame)
@@ -195,6 +200,9 @@ class ForexApp:
         self._load_last_used_preset_on_startup() # Versuche, das letzte Preset zu laden
 
         self.log_message("ForexApp GUI initialisiert und Layout erstellt.")
+
+        # Backtester Instanz
+        self.backtester = Backtester(gui_log_callback=self.log_message)
 
 
     # --- Preset Kernlogik ---
@@ -604,10 +612,118 @@ class ForexApp:
         """Löscht die aktuelle Figur und zeigt eine Startnachricht."""
         self.plot_figure.clear()
         ax = self.plot_figure.add_subplot(111)
-        ax.text(0.5, 0.5, "Bitte Analyse starten, um den Chart anzuzeigen.",
+        ax.text(0.5, 0.5, "Bitte Analyse oder Backtest starten, um den Chart anzuzeigen.", # Angepasster Text
                 horizontalalignment='center', verticalalignment='center',
                 transform=ax.transAxes, fontsize=12, color='grey')
         self.plot_canvas.draw()
+
+    # --- Backtesting Methoden ---
+    def start_backtest_thread(self):
+        """Startet den Backtest-Prozess in einem separaten Thread."""
+        self.log_message("Starte Backtest-Thread...")
+        self.status_var.set("Backtesting...")
+        self._set_input_widgets_state(tk.DISABLED)
+        self.progress_bar.start()
+
+        try:
+            selected_pair_config = self.get_selected_forex_pair_config()
+            if not selected_pair_config:
+                messagebox.showerror("Fehler", "Bitte ein gültiges Forex-Paar auswählen.")
+                self._analysis_done("Fehler: Kein Forex-Paar.") # Nutzt _analysis_done zum Zurücksetzen
+                return
+
+            start_date_str = self.start_date_var.get()
+            end_date_str = self.end_date_var.get()
+            datetime.strptime(start_date_str, "%Y-%m-%d") # Validierung
+            datetime.strptime(end_date_str, "%Y-%m-%d") # Validierung
+
+            saison_kauf_schwelle = float(self.saison_kauf_var.get()) / 100.0
+            saison_verkauf_schwelle = float(self.saison_verkauf_var.get()) / 100.0
+            gdp_long_schwelle = float(self.gdp_long_schwelle_var.get())
+            gdp_short_schwelle = float(self.gdp_short_schwelle_var.get())
+
+            analyzer_config = {
+                'SCHWELLE_SAISONALITAET_KAUF': saison_kauf_schwelle,
+                'SCHWELLE_SAISONALITAET_VERKAUF': saison_verkauf_schwelle
+            }
+
+            # Parameter für Backtester.run_backtest
+            backtest_params = {
+                "forex_pair_config": selected_pair_config,
+                "start_date_str": start_date_str,
+                "end_date_str": end_date_str,
+                "analyzer_config_dict": analyzer_config,
+                "gdp_long_threshold": gdp_long_schwelle,
+                "gdp_short_threshold": gdp_short_schwelle,
+                "initial_cash": 10000, # Standardwert, könnte konfigurierbar gemacht werden
+                "benchmark_ticker": "^SPX", # Standardwert, könnte konfigurierbar gemacht werden
+                "trade_amount_percent": 0.10 # Standardwert, könnte konfigurierbar gemacht werden
+            }
+
+        except ValueError as ve:
+            messagebox.showerror("Eingabefehler", f"Ungültige Eingabe für Backtest: {ve}")
+            self._analysis_done("Fehler: Ungültige Eingabe.")
+            return
+
+        backtest_thread = threading.Thread(target=self._run_backtest_prozess,
+                                           args=(backtest_params,),
+                                           daemon=True)
+        backtest_thread.start()
+
+    def _run_backtest_prozess(self, backtest_params):
+        """Führt den eigentlichen Backtest im Thread durch."""
+        try:
+            self.log_message("Backtest-Prozess gestartet im Thread.")
+            strategy_history, benchmark_history = self.backtester.run_backtest(**backtest_params)
+
+            if strategy_history is not None and benchmark_history is not None:
+                self.log_message("Backtest erfolgreich abgeschlossen.")
+                # GUI-Update im Hauptthread planen
+                self.root.after(0, self.display_backtest_results, strategy_history, benchmark_history)
+                self.root.after(0, self._analysis_done, "Backtest erfolgreich.")
+            else:
+                self.log_message("Backtest fehlgeschlagen oder keine Daten zurückgegeben.")
+                self.root.after(0, self._analysis_done, "Backtest fehlgeschlagen.")
+
+        except Exception as e:
+            self.log_message(f"Fehler während des Backtests: {e}")
+            import traceback
+            self.log_message(traceback.format_exc())
+            self.root.after(0, self._analysis_done, f"Backtest fehlgeschlagen: {e}")
+
+    def display_backtest_results(self, strategy_df, benchmark_df):
+        """Zeigt die Backtest-Ergebnisse (Portfolio-Wertentwicklung) im Plot an."""
+        self.log_message("Anzeige der Backtest-Ergebnisse...")
+        self.plot_figure.clear()
+        ax = self.plot_figure.add_subplot(111)
+
+        if strategy_df.empty:
+            self.log_message("Keine Daten für Strategie-Portfolio vorhanden.")
+            ax.text(0.5, 0.6, "Keine Daten für Strategie-Portfolio.", ha='center', va='center', transform=ax.transAxes)
+        else:
+            ax.plot(strategy_df['date'], strategy_df['value'], label="Strategie Portfolio", color="blue")
+
+        if benchmark_df.empty:
+            self.log_message("Keine Daten für Benchmark-Portfolio vorhanden.")
+            # Optional: Nachricht im Plot, falls nur Benchmark fehlt
+            if strategy_df.empty: # Nur wenn beide leer sind, größere Nachricht
+                 ax.text(0.5, 0.4, "Keine Daten für Benchmark-Portfolio.", ha='center', va='center', transform=ax.transAxes)
+        else:
+            ax.plot(benchmark_df['date'], benchmark_df['value'], label="Benchmark Portfolio (SPX)", color="orange")
+
+        ax.set_title("Portfolio Wertentwicklung (Backtest)")
+        ax.set_xlabel("Datum")
+        ax.set_ylabel("Portfolio Wert")
+        ax.legend(loc="best")
+        ax.grid(True)
+
+        # Formatierung der Datumsachse für bessere Lesbarkeit
+        import matplotlib.dates as mdates
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        self.plot_figure.autofmt_xdate() # Verbessert das Layout der Datumslabels
+
+        self.plot_canvas.draw()
+        self.log_message("Backtest-Ergebnisse im Chart angezeigt.")
 
 
 if __name__ == "__main__":
