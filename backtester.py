@@ -64,11 +64,11 @@ class Backtester:
         # forex_pair_config['pair_code'] SOLLTE bereits der vollständige yfinance-Ticker sein (z.B. "EURUSD=X")
         trading_ticker_yf = forex_pair_config['pair_code']
         self.log(f"DEBUG: Direkt nach Zuweisung - forex_pair_config['pair_code']: '{forex_pair_config['pair_code']}', trading_ticker_yf: '{trading_ticker_yf}'")
-        # Benchmark Ticker bleibt wie er ist (z.B. ^SPX)
 
-        self.log(f"Lade Forex-Daten für Signalerzeugung ({trading_ticker_yf})...")
+        ticker_for_dm_call = trading_ticker_yf # Neue Variable für den direkten Aufruf
+        self.log(f"Lade Forex-Daten für Signalerzeugung mit ticker_for_dm_call: ({ticker_for_dm_call})...")
         # Daten für Signalerzeugung
-        forex_data_for_signals = self.data_manager.get_historical_price_data(trading_ticker_yf, start_date_str, end_date_str)
+        forex_data_for_signals = self.data_manager.get_historical_price_data(ticker_for_dm_call, start_date_str, end_date_str)
         if forex_data_for_signals.empty:
             self.log(f"Keine Forex-Daten für {trading_ticker_yf} im Zeitraum gefunden. Backtest abgebrochen.")
             return None, None
