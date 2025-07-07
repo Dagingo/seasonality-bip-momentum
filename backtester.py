@@ -212,4 +212,3 @@ class Backtester:
             self.log(f"Benchmark Endwert am {end_date.strftime('%Y-%m-%d')}: {final_bench_value:.2f}")
 
         return strategy_history_df, benchmark_history_df
-```
