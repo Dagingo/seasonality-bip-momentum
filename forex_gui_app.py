@@ -501,6 +501,10 @@ class ForexApp:
                 saisonalitaet_raw=self.saisonalitaet_series,
                 gdp_momentum_signal_aligned=self.gdp_momentum_signal_aligned_to_forex # Hier das neue Signal übergeben
             )
+            # Wende Cooldown-Periode auf die finalen Signale an
+            self.final_signals_series = self.signal_analyzer.apply_signal_cooldown(self.final_signals_series, cooldown_days=5)
+            self.log_message("Signal-Cooldown von 5 Tagen angewendet.")
+
 
             self.log_message("Analyse abgeschlossen.")
             # GUI-Update im Hauptthread planen (für Plot etc.)
