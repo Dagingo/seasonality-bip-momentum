@@ -1,6 +1,7 @@
 import pandas as pd
 import yfinance as yf
-from datetime import datetime
+from datetime import datetime, date # Added date for DataReader
+import pandas_datareader.data as pdr_web # For fetching live GDP data
 
 # Pfade zu den BIP-Daten CSV-Dateien
 BIP_DATA_LIVE_CSV = 'bip_data_live.csv'
@@ -32,7 +33,69 @@ class DataManager:
         self.fallback_bip_col_land_a = "BIP_Land_A"
         self.fallback_bip_col_land_b = "BIP_Land_B"
 
+        # Mapping for live GDP data fetching
+        # Keys are country names as used in self.bip_country_mapping
+        self.gdp_api_map = {
+            "USA": {"source": "fred", "id": "GDPC1", "name": "Real Gross Domestic Product"},
+            # For Japan, using FRED's series for Japanese GDP (converted by FRED from national source)
+            # Real Gross Domestic Product for Japan, Seasonally Adjusted, Rescaled to 2015 U.S. Dollars
+            # This is often available and consistently formatted by FRED.
+            "Japan": {"source": "fred", "id": "JPNRGDPEXP", "name": "Real Gross Domestic Product for Japan"},
+            # If Japan via FRED is problematic, Canada is an alternative:
+            # "Canada": {"source": "fred", "id": "GDPC1CAN", "name": "Real Gross Domestic Product for Canada"},
+
+            # OECD direct fetching is more complex to set up reliably across many series with pandas-datareader
+            # due to varying dataset structures and series naming conventions.
+            # Example: "Japan": {"source": "oecd", "dataset": "QNA", "series_code_template": "{location}/B1_GE.GPSA.S1.VOBARSA.Q"}
+            # where location would be 'JPN'. This requires more intricate parsing.
+        }
+        self.oecd_base_url = "https://stats.oecd.org/SDMX-JSON/data" # Base URL for direct SDMX-JSON queries if needed
+
+
         print("[DataManager] DataManager initialisiert.")
+
+
+    def _fetch_gdp_from_fred(self, series_id, series_name, start_date_dt, end_date_dt):
+        """Helper to fetch specific GDP data series from FRED."""
+        print(f"[DataManager] Attempting to fetch GDP data for '{series_name}' (ID: {series_id}) from FRED ({start_date_dt} to {end_date_dt})...")
+        try:
+            gdp_data = pdr_web.DataReader(series_id, 'fred', start_date_dt, end_date_dt)
+            if gdp_data.empty:
+                print(f"[DataManager] No data received from FRED for {series_id}.")
+                return None
+
+            # DataReader for FRED returns a DataFrame, series_id is usually the column name
+            if series_id in gdp_data.columns:
+                gdp_series = gdp_data[[series_id]].copy() # Keep as DataFrame initially for consistent handling
+                gdp_series.rename(columns={series_id: series_name}, inplace=True) # Rename to generic name
+            elif not gdp_data.columns.empty : # Fallback if exact series_id not in columns (e.g. sometimes with single series)
+                gdp_series = gdp_data[[gdp_data.columns[0]]].copy()
+                gdp_series.rename(columns={gdp_data.columns[0]: series_name}, inplace=True)
+                print(f"[DataManager] FRED data for {series_id} found in column '{gdp_data.columns[0]}', renamed to '{series_name}'.")
+            else:
+                 print(f"[DataManager] FRED data for {series_id} is an empty DataFrame or has no columns.")
+                 return None
+
+            if not isinstance(gdp_series.index, pd.DatetimeIndex):
+                gdp_series.index = pd.to_datetime(gdp_series.index)
+
+            # FRED GDP data is typically quarterly. Ensure it starts on quarter start for consistency.
+            # Resample to Quarter Start ('QS'), then forward fill.
+            # This handles if FRED returns mid-quarter dates (unlikely for GDPC1 but good practice).
+            gdp_series = gdp_series.resample('QS').ffill()
+            gdp_series = gdp_series.dropna() # Drop any NaNs after resampling/ffill, esp. at start.
+
+            print(f"[DataManager] GDP data for '{series_name}' (ID: {series_id}) successfully fetched from FRED. {len(gdp_series)} entries.")
+            return gdp_series # Return DataFrame with one column
+        except Exception as e:
+            print(f"[DataManager] Error fetching GDP data from FRED for {series_id} ('{series_name}'): {e}")
+            return None
+
+    # OECD fetching would be more complex and is stubbed out for now.
+    # def _fetch_gdp_from_oecd(self, country_name, details, start_date_dt, end_date_dt):
+    #     print(f"[DataManager] OECD fetching for {country_name} not yet fully implemented.")
+    #     return None
+
 
     def get_forex_data(self, forex_pair_code, start_date, end_date):
         """
@@ -111,40 +174,112 @@ class DataManager:
 
     def get_bip_data(self, country1_name, country2_name):
         """
-        Lädt BIP-Daten für die zwei angegebenen Länder (Ländernamen, nicht Währungscodes).
-        Versucht zuerst Live-Daten (aus BIP_DATA_LIVE_CSV), dann Fallback (aus BIP_DATA_FALLBACK_CSV).
-        Gibt ein DataFrame mit den BIP-Daten und die Namen der verwendeten Spalten (target_col_country1, target_col_country2) zurück.
+        Lädt BIP-Daten für die zwei angegebenen Länder.
+        Versucht API-Abruf für konfigurierte Länder, sonst Fallback auf CSV.
+        Gibt ein DataFrame mit den BIP-Daten und die Namen der verwendeten Spalten zurück.
         """
         print(f"[DataManager] Ermittle BIP-Daten für Länder: {country1_name} und {country2_name}.")
 
-        # Ziel-Spaltennamen basierend auf der Länderzuordnung (z.B. BIP_USA, BIP_EUR)
-        target_col_country1 = self.bip_csv_column_names.get(country1_name)
-        target_col_country2 = self.bip_csv_column_names.get(country2_name)
+        # Ziel-Spaltennamen für das finale DataFrame (z.B. BIP_USA, BIP_EUR)
+        target_col_name1 = self.bip_csv_column_names.get(country1_name)
+        target_col_name2 = self.bip_csv_column_names.get(country2_name)
 
-        if not target_col_country1 or not target_col_country2:
-            print(f"[DataManager] FEHLER: Keine BIP-Spaltenzuordnung im DataManager für {country1_name} oder {country2_name} gefunden.")
+        if not target_col_name1 or not target_col_name2:
+            print(f"[DataManager] FEHLER: Keine BIP-Spaltenzuordnung für {country1_name} oder {country2_name} gefunden.")
             return pd.DataFrame(), None, None
 
-        try:
-            # TODO: Später hier Logik für API-Abruf einfügen.
-            # Derzeit wird BIP_DATA_LIVE_CSV als "Live"-Quelle behandelt.
-            bip_df = self._load_bip_csv(BIP_DATA_LIVE_CSV, target_col_country1, target_col_country2, is_fallback=False)
-            print(f"[DataManager] 'Live' BIP-Daten ({BIP_DATA_LIVE_CSV}) erfolgreich geladen.")
-            return bip_df, target_col_country1, target_col_country2
-        except FileNotFoundError as e_live_fnf:
-            print(f"[DataManager] Info: 'Live' BIP-Datei nicht gefunden oder Spalten fehlen ({BIP_DATA_LIVE_CSV}): {e_live_fnf}. Versuche Fallback...")
-        except Exception as e_live_other:
-            print(f"[DataManager] FEHLER beim Laden von 'Live' BIP-Daten ({BIP_DATA_LIVE_CSV}): {e_live_other}. Versuche Fallback...")
+        series_data = {} # Store fetched series here, keyed by target_col_name
 
-        # Fallback-Versuch, wenn Live-Laden fehlschlägt
-        try:
-            print(f"[DataManager] Starte Fallback-Versuch für BIP-Daten mit: {BIP_DATA_FALLBACK_CSV}")
-            bip_df = self._load_bip_csv(BIP_DATA_FALLBACK_CSV, target_col_country1, target_col_country2, is_fallback=True)
-            print(f"[DataManager] Fallback-BIP-Daten ({BIP_DATA_FALLBACK_CSV}) erfolgreich geladen.")
-            return bip_df, target_col_country1, target_col_country2
-        except Exception as e_fallback:
-            print(f"[DataManager] FEHLER auch beim Laden von Fallback-BIP-Daten ({BIP_DATA_FALLBACK_CSV}): {e_fallback}")
+        # Definiere Start- und Enddatum für API-Abrufe (z.B. letzte 10-15 Jahre)
+        # Diese Daten müssen als datetime.date oder datetime.datetime übergeben werden.
+        # Die ForexApp verwendet Strings, daher hier Konvertierung oder Anpassung nötig.
+        # Für einen generischen Abruf hier, nehmen wir einen weiten Zeitraum.
+        # Die eigentliche Filterung nach Forex-Zeitraum passiert später.
+        api_end_date = date.today()
+        api_start_date = date(api_end_date.year - 15, api_end_date.month, api_end_date.day)
+
+
+        for i, country_name_iter in enumerate([country1_name, country2_name]):
+            target_col_name_iter = target_col_name1 if i == 0 else target_col_name2
+            fetched_from_api = False
+
+            if country_name_iter in self.gdp_api_map:
+                api_details = self.gdp_api_map[country_name_iter]
+                gdp_series_df = None # Wird ein DataFrame mit einer Spalte sein
+                if api_details["source"] == "fred":
+                    gdp_series_df = self._fetch_gdp_from_fred(api_details["id"], api_details["name"], api_start_date, api_end_date)
+                # Elif für "oecd" etc. könnte hier folgen
+
+                if gdp_series_df is not None and not gdp_series_df.empty:
+                    # API-Daten erfolgreich abgerufen, benenne die Spalte auf den Zielnamen um (z.B. BIP_USA)
+                    # _fetch_gdp_from_fred gibt bereits einen DataFrame mit einer Spalte zurück, die api_details["name"] heißt.
+                    # Wir wollen es auf target_col_name_iter umbenennen.
+                    series_data[target_col_name_iter] = gdp_series_df.iloc[:, 0].rename(target_col_name_iter)
+                    fetched_from_api = True
+                    print(f"[DataManager] BIP-Daten für {country_name_iter} erfolgreich von API ({api_details['source']}) geladen.")
+
+            if not fetched_from_api:
+                print(f"[DataManager] BIP-Daten für {country_name_iter} werden aus CSV geladen (API nicht konfiguriert oder Fehler).")
+                # Markiere, dass CSV benötigt wird, aber lade es erst, wenn klar ist, ob beide aus CSV kommen oder gemischt wird.
+                # Fürs Erste setzen wir None, um CSV-Ladung unten auszulösen, falls diese Serie nicht aus API kam.
+                if target_col_name_iter not in series_data: # Nur setzen, wenn nicht schon aus API geladen
+                     series_data[target_col_name_iter] = None # Signalisiert, dass CSV-Fallback benötigt wird
+
+        # CSV-Daten laden, falls für mindestens ein Land benötigt oder als Basis
+        csv_bip_df = None
+        needs_csv_fallback_for_any = any(s is None for s in series_data.values())
+
+        if needs_csv_fallback_for_any:
+            try:
+                # _load_bip_csv erwartet die Zielspaltennamen, um die richtigen Spalten aus der CSV zu laden oder umzubenennen.
+                # Es ist besser, wenn _load_bip_csv das gesamte relevante CSV lädt und wir dann auswählen.
+                # Für diese Implementierung passen wir an, dass _load_bip_csv nur die benötigten Spalten lädt.
+                # Wenn wir jedoch mischen (ein Land API, ein Land CSV), müssen wir das CSV trotzdem laden.
+
+                # Lade CSV, wenn irgendein Wert None ist. _load_bip_csv sollte so angepasst werden,
+                # dass es die Spalten target_col_name1 und target_col_name2 zurückgibt,
+                # auch wenn es aus bip_data.csv (fallback) mit BIP_Land_A/B liest.
+                print(f"[DataManager] Lade BIP-Daten aus CSV, da API-Daten nicht für alle Länder verfügbar oder angefordert.")
+                csv_bip_df = self._load_bip_csv(BIP_DATA_LIVE_CSV, target_col_name1, target_col_name2, is_fallback=False)
+            except FileNotFoundError:
+                print(f"[DataManager] 'Live' BIP-Datei ({BIP_DATA_LIVE_CSV}) nicht gefunden. Versuche Fallback-CSV.")
+                try:
+                    csv_bip_df = self._load_bip_csv(BIP_DATA_FALLBACK_CSV, target_col_name1, target_col_name2, is_fallback=True)
+                except Exception as e_fallback_csv:
+                    print(f"[DataManager] FEHLER auch beim Laden von Fallback-BIP-Daten ({BIP_DATA_FALLBACK_CSV}): {e_fallback_csv}")
+                    # Wenn CSV fehlschlägt und API-Daten fehlen, können wir nicht fortfahren
+                    if series_data.get(target_col_name1) is None and series_data.get(target_col_name2) is None:
+                        return pd.DataFrame(), None, None
+            except Exception as e_csv:
+                print(f"[DataManager] Allgemeiner Fehler beim Laden von CSV-BIP-Daten: {e_csv}")
+                if series_data.get(target_col_name1) is None and series_data.get(target_col_name2) is None:
+                    return pd.DataFrame(), None, None
+
+        # Kombiniere API und CSV Daten
+        final_bip_data_list = []
+        for i, target_col_name_iter in enumerate([target_col_name1, target_col_name2]):
+            if series_data.get(target_col_name_iter) is not None: # API-Daten haben Vorrang
+                final_bip_data_list.append(series_data[target_col_name_iter])
+            elif csv_bip_df is not None and target_col_name_iter in csv_bip_df:
+                final_bip_data_list.append(csv_bip_df[target_col_name_iter])
+            else:
+                # Sollte nicht passieren, wenn Logik oben korrekt ist und CSV-Fallback funktioniert
+                print(f"[DataManager] FEHLER: Keine Datenquelle für {target_col_name_iter} gefunden.")
+                return pd.DataFrame(), None, None # Kritischer Fehler
+
+        if len(final_bip_data_list) == 2:
+            # pd.concat auf axis=1, um die Series zu einem DataFrame zu verbinden
+            # Stellt sicher, dass der Index (Datum) ausgerichtet wird.
+            # join='outer' behält alle Datenpunkte, ffill/bfill könnte danach angewendet werden,
+            # aber compare_gdp_momentum macht seine eigene Synchronisierung.
+            final_bip_df = pd.concat(final_bip_data_list, axis=1, join='outer')
+            final_bip_df.sort_index(inplace=True)
+            print(f"[DataManager] Finale BIP-Daten kombiniert. {len(final_bip_df)} Einträge. Head:\n{final_bip_df.head()}")
+            return final_bip_df, target_col_name1, target_col_name2
+        else:
+            print(f"[DataManager] FEHLER: Konnte nicht zwei BIP-Datenserien für die Kombination erstellen.")
             return pd.DataFrame(), None, None
+
 
     def get_country_names_for_forex_pair(self, forex_pair_str):
         """
