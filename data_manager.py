@@ -426,21 +426,35 @@ class DataManager:
             # Wir benötigen primär 'Close' und stellen sicher, dass der Index ein DatetimeIndex ist.
             if not isinstance(data.index, pd.DatetimeIndex):
                 data.index = pd.to_datetime(data.index)
+            data.index.name = 'Datum' # Indexname konsistent setzen
 
-            # Umbenennen der Spalte 'Close' zu 'Schlusskurs' für Konsistenz innerhalb des Projekts,
-            # aber für die Portfolio-Klasse ist 'Close' praktischer (wie in yfinance Standard).
-            # Portfolio.get_current_price erwartet 'Close'.
-            # data.rename(columns={'Close': 'Schlusskurs'}, inplace=True) # Optional, je nach Bedarf
+            # Stelle sicher, dass wir eine 'Schlusskurs'-Spalte haben, die von SignalAnalyzer erwartet wird.
+            # PortfolioManager.get_current_price verwendet 'Close', daher muss diese Methode
+            # entweder den DataFrame mit 'Close' zurückgeben oder PortfolioManager angepasst werden.
+            # Für die Konsistenz mit get_forex_data und den Erwartungen des SignalAnalyzers,
+            # geben wir hier einen DataFrame mit 'Schlusskurs' zurück.
+            # PortfolioManager.get_current_price muss dann ggf. auch 'Schlusskurs' verwenden oder
+            # die Daten, die es cacht, entsprechend anpassen.
+            # Aktuell: SignalAnalyzer braucht 'Schlusskurs', PortfolioManager.get_current_price braucht 'Close'.
+            # Wir ändern get_historical_price_data so, dass es 'Schlusskurs' liefert für den Analyzer
+            # und passen Portfolio.get_current_price an, damit es auch 'Schlusskurs' aus dem Cache liest.
 
-            # Sicherstellen, dass der Index 'Date' (oder 'Datum') heißt, wie von Portfolio erwartet.
-            # yfinance Index ist bereits 'Date' (oder 'Datetime').
-            data.index.name = 'Date'
+            if 'Close' in data.columns:
+                processed_data = data[['Close']].copy()
+                processed_data.rename(columns={'Close': 'Schlusskurs'}, inplace=True)
+            elif 'close' in data.columns: # Fallback für kleingeschriebene Spaltennamen
+                processed_data = data[['close']].copy()
+                processed_data.rename(columns={'close': 'Schlusskurs'}, inplace=True)
+            else:
+                debug_print(f"[DataManager] FEHLER: Weder 'Close' noch 'close' Spalte in yfinance-Daten für {ticker} gefunden. Verfügbare Spalten: {data.columns.tolist()}")
+                return pd.DataFrame()
 
-
-            print(f"[DataManager] Historische Preisdaten für {ticker} erfolgreich geladen. {len(data)} Einträge. Head:\n{data.head()}")
-            return data # Gibt das gesamte OHLCV DataFrame zurück
+            debug_print(f"[DataManager] Historische Preisdaten für {ticker} verarbeitet zu 'Schlusskurs'. Head:\n{processed_data.head().to_string()}")
+            return processed_data
         except Exception as e:
-            print(f"[DataManager] FEHLER beim Laden von historischen Preisdaten für {ticker} via yfinance: {e}")
+            debug_print(f"[DataManager] FEHLER beim Laden von historischen Preisdaten für {ticker} via yfinance: {e}")
+            import traceback # Für detaillierteren Fehler
+            debug_print(traceback.format_exc())
             return pd.DataFrame()
 
 print("DataManager Modul geladen.")
