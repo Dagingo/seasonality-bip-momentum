@@ -6,54 +6,140 @@ import pandas_datareader.data as pdr_web # For fetching live GDP data
 # Pfade zu den BIP-Daten CSV-Dateien
 BIP_DATA_LIVE_CSV = 'bip_data_live.csv'
 BIP_DATA_FALLBACK_CSV = 'bip_data.csv' # Die bereits existierende Datei für den Fallback
+PROVISIONAL_GDP_DATA_PATH = 'data/gdp_provisional/' # <--- NEUE Konstante
+
+# Importiere debug_print (oder verwende einen lokalen Stub)
+# Dies setzt voraus, dass die ForexApp den Callback für signal_analyzer.debug_print setzt,
+# und dieser dann global für DataManager-Aufrufe aus dem Analyseprozess verfügbar ist.
+# Eine robustere Lösung wäre, dem DataManager auch einen Logger zu übergeben.
+try:
+    from signal_analyzer import debug_print
+except ImportError:
+    print("WARNUNG: signal_analyzer.debug_print nicht gefunden, nutze Standard-Print für DataManager-Logs.")
+    def debug_print(message, data=None): # Lokaler Fallback-Logger
+        log_message = f"[DM STUB DEBUG] {message}"
+        if data is not None and isinstance(data, pd.DataFrame):
+            log_message += f"\n{data.head().to_string()}\n--------------------"
+        elif data is not None:
+            log_message += f"\n{str(data)}\n--------------------"
+        print(log_message)
+
 
 class DataManager:
     def __init__(self):
+        # Importiere os hier, um sicherzustellen, dass es im Kontext der Klasse verfügbar ist,
+        # falls die globale Importierung oben nicht ausreicht oder für Klarheit.
+        import os
+        self.os_path_exists = os.path.exists # Für einfacheren Zugriff in Methoden
+
         # Zuordnung von Währungscodes zu "Ländernamen" (oder Regionen), wie sie in BIP-Daten verwendet werden könnten
         self.bip_country_mapping = {
-            "EUR": "Eurozone",
-            "USD": "USA",
-            "GBP": "UK",
-            "JPY": "Japan",
-            "CHF": "Switzerland",
-            "AUD": "Australia",
-            "CAD": "Canada"
+            "EUR": "Eurozone",    # Euro
+            "USD": "USA",           # US Dollar
+            "GBP": "UK",            # British Pound
+            "JPY": "Japan",         # Japanese Yen
+            "CHF": "Switzerland",   # Swiss Franc
+            "AUD": "Australia",     # Australian Dollar
+            "CAD": "Canada",        # Canadian Dollar
+            "BRL": "Brazil",        # Brazilian Real
+            "CNY": "China",         # Chinese Yuan Renminbi
+            "INR": "India",         # Indian Rupee
+            "IDR": "Indonesia",     # Indonesian Rupiah
+            "MXN": "Mexico",        # Mexican Peso
+            "RUB": "Russia",        # Russian Ruble
+            "SAR": "Saudi Arabia",  # Saudi Riyal
+            "ZAR": "South Africa",  # South African Rand
+            "KRW": "South Korea",   # South Korean Won
+            "TRY": "Turkey",        # Turkish Lira
+            # ARS (Argentine Peso) ausgelassen
         }
-        # Erwartete Spaltennamen in der `bip_data_live.csv` Datei
+        # Erwartete Spaltennamen in der `bip_data_live.csv` Datei oder für provisorische CSVs
         self.bip_csv_column_names = {
             "Eurozone": "BIP_EUR",
-            "USA": "BIP_USA",
-            "UK": "BIP_UK",
-            "Japan": "BIP_JPN",
+            "USA": "BIP_USD",
+            "UK": "BIP_GBP",
+            "Japan": "BIP_JPY",
             "Switzerland": "BIP_CHF",
             "Australia": "BIP_AUD",
-            "Canada": "BIP_CAD"
+            "Canada": "BIP_CAD",
+            "Brazil": "BIP_BRL",
+            "China": "BIP_CNY",
+            "India": "BIP_INR",
+            "Indonesia": "BIP_IDR",
+            "Mexico": "BIP_MXN",
+            "Russia": "BIP_RUB",
+            "Saudi Arabia": "BIP_SAR", # Wird provisorisch sein
+            "South Africa": "BIP_ZAR",
+            "South Korea": "BIP_KRW",
+            "Turkey": "BIP_TRY",
+            # "Argentina": "BIP_ARS", # Falls wir es doch hinzufügen
         }
         # Spaltennamen in der alten `bip_data.csv` (Fallback)
-        self.fallback_bip_col_land_a = "BIP_Land_A"
+        self.fallback_bip_col_land_a = "BIP_Land_A" # Bleibt für Kompatibilität mit alter CSV
         self.fallback_bip_col_land_b = "BIP_Land_B"
 
         # Mapping for live GDP data fetching
-        # Keys are country names as used in self.bip_country_mapping
         self.gdp_api_map = {
-            "USA": {"source": "fred", "id": "GDPC1", "name": "Real Gross Domestic Product"},
-            # For Japan, using FRED's series for Japanese GDP (converted by FRED from national source)
-            # Real Gross Domestic Product for Japan, Seasonally Adjusted, Rescaled to 2015 U.S. Dollars
-            # This is often available and consistently formatted by FRED.
-            "Japan": {"source": "fred", "id": "JPNRGDPEXP", "name": "Real Gross Domestic Product for Japan"},
-            # If Japan via FRED is problematic, Canada is an alternative:
-            # "Canada": {"source": "fred", "id": "GDPC1CAN", "name": "Real Gross Domestic Product for Canada"},
-
-            # OECD direct fetching is more complex to set up reliably across many series with pandas-datareader
-            # due to varying dataset structures and series naming conventions.
-            # Example: "Japan": {"source": "oecd", "dataset": "QNA", "series_code_template": "{location}/B1_GE.GPSA.S1.VOBARSA.Q"}
-            # where location would be 'JPN'. This requires more intricate parsing.
+            "USA": {"source": "fred", "id": "GDPC1", "name": "Real Gross Domestic Product USA"},
+            "Japan": {"source": "fred", "id": "JPNRGDPEXP", "name": "Real Gross Domestic Product Japan"},
+            "Eurozone": {"source": "fred", "id": "CPMNACSCAB1GQEZ19", "name": "Real Gross Domestic Product Euro Area"},
+            "UK": {"source": "fred", "id": "GBRRGDPR", "name": "Real Gross Domestic Product UK"}, # Chained Volume Measures, SA
+            "Australia": {"source": "fred", "id": "AUSGDPRQDSMEI", "name": "Real Gross Domestic Product Australia"},
+            "Canada": {"source": "fred", "id": "CNGDPRPCMQ", "name": "Real Gross Domestic Product Canada"}, # Chained 2012 Dollars, SA
+            "Brazil": {"source": "fred", "id": "BRAGDPNQDSMEI", "name": "Real Gross Domestic Product Brazil"},
+            "China": {"source": "fred", "id": "CNAGDPNQDSMEI", "name": "Real Gross Domestic Product China"},
+            "India": {"source": "fred", "id": "INAGDPNQDSMEI", "name": "Real Gross Domestic Product India"},
+            "Indonesia": {"source": "fred", "id": "IDNGDPNQDSMEI", "name": "Real Gross Domestic Product Indonesia"},
+            "Mexico": {"source": "fred", "id": "MEXRGDPQDSNAQ", "name": "Real Gross Domestic Product Mexico"},
+            "Russia": {"source": "fred", "id": "RUSGDPNQDSMEI", "name": "Real Gross Domestic Product Russia"},
+            "South Africa": {"source": "fred", "id": "ZAFGDPNQDSMEI", "name": "Real Gross Domestic Product South Africa"},
+            "South Korea": {"source": "fred", "id": "KORRGDPQDSNAQ", "name": "Real Gross Domestic Product South Korea"},
+            "Turkey": {"source": "fred", "id": "TURGDPNQDSMEI", "name": "Real Gross Domestic Product Turkey"},
+            "Switzerland": {"source": "fred", "id": "CHERGDPQDSNAQ", "name": "Real Gross Domestic Product Switzerland"},
+            # Länder, die wahrscheinlich provisorische Daten benötigen (und hier nicht explizit in gdp_api_map sind):
+            # z.B. Argentinien, Saudi-Arabien
         }
-        self.oecd_base_url = "https://stats.oecd.org/SDMX-JSON/data" # Base URL for direct SDMX-JSON queries if needed
+        self.oecd_base_url = "https://stats.oecd.org/SDMX-JSON/data"
 
 
-        print("[DataManager] DataManager initialisiert.")
+        debug_print("[DataManager] DataManager initialisiert.") # Geändert zu debug_print
 
+    def _load_provisional_gdp_csv(self, country_name_internal, target_col_name):
+        """
+        Versucht, eine provisorische BIP-CSV-Datei für ein bestimmtes Land zu laden.
+        country_name_internal: Der interne Name des Landes (z.B. "Saudi Arabia", "Argentina")
+        target_col_name: Der erwartete Spaltenname im resultierenden DataFrame (z.B. "BIP_SAR")
+        """
+        filename_country_part = country_name_internal.lower().replace(" ", "_")
+        provisional_csv_path = f"{PROVISIONAL_GDP_DATA_PATH}bip_data_{filename_country_part}.csv"
+
+        debug_print(f"[DataManager] Suche provisorische BIP-Daten für '{country_name_internal}' unter: {provisional_csv_path}")
+
+        try:
+            if not self.os_path_exists(provisional_csv_path): # self.os_path_exists verwenden
+                debug_print(f"[DataManager] Provisorische BIP-Datei nicht gefunden: {provisional_csv_path}")
+                return None
+
+            daten = pd.read_csv(provisional_csv_path, parse_dates=['Datum'])
+            daten.set_index('Datum', inplace=True)
+
+            if target_col_name not in daten.columns:
+                debug_print(f"[DataManager] FEHLER: Erforderliche Spalte '{target_col_name}' nicht in provisorischer CSV {provisional_csv_path} gefunden. Verfügbare Spalten: {daten.columns.tolist()}")
+                if len(daten.columns) == 1: # Nur eine Datenspalte (neben Index)
+                    debug_print(f"[DataManager] Nutze erste Datenspalte '{daten.columns[0]}' als '{target_col_name}'.")
+                    daten.rename(columns={daten.columns[0]: target_col_name}, inplace=True)
+                else:
+                    return None # Mehrdeutige Daten
+
+            gdp_series = daten[[target_col_name]].copy() # Nur die relevante Spalte
+            gdp_series.sort_index(inplace=True)
+
+            debug_print(f"[DataManager] Provisorische BIP-Daten für '{country_name_internal}' erfolgreich aus {provisional_csv_path} geladen. {len(gdp_series)} Einträge.")
+            return gdp_series
+
+        except Exception as e:
+            debug_print(f"[DataManager] FEHLER beim Laden der provisorischen BIP-Daten aus {provisional_csv_path}: {e}")
+            return None
 
     def _fetch_gdp_from_fred(self, series_id, series_name, start_date_dt, end_date_dt):
         """Helper to fetch specific GDP data series from FRED."""
@@ -222,50 +308,55 @@ class DataManager:
                 print(f"[DataManager] BIP-Daten für {country_name_iter} werden aus CSV geladen (API nicht konfiguriert oder Fehler).")
                 # Markiere, dass CSV benötigt wird, aber lade es erst, wenn klar ist, ob beide aus CSV kommen oder gemischt wird.
                 # Fürs Erste setzen wir None, um CSV-Ladung unten auszulösen, falls diese Serie nicht aus API kam.
-                if target_col_name_iter not in series_data: # Nur setzen, wenn nicht schon aus API geladen
-                     series_data[target_col_name_iter] = None # Signalisiert, dass CSV-Fallback benötigt wird
+            # if target_col_name_iter not in series_data: # Nur setzen, wenn nicht schon aus API geladen
+            #      series_data[target_col_name_iter] = None # Signalisiert, dass CSV-Fallback benötigt wird
+            # Die Logik wurde geändert: series_data wird direkt befüllt oder bleibt leer, wenn nichts gefunden.
 
-        # CSV-Daten laden, falls für mindestens ein Land benötigt oder als Basis
-        csv_bip_df = None
-        needs_csv_fallback_for_any = any(s is None for s in series_data.values())
+            if not fetched_from_api: # Wenn nicht von API geladen (entweder kein Eintrag in gdp_api_map oder API-Abruf fehlgeschlagen)
+                debug_print(f"[DataManager] Versuche provisorische CSV-Daten für {country_name_iter}, da API-Daten nicht verfügbar/abgerufen.")
+                provisional_gdp_df = self._load_provisional_gdp_csv(country_name_iter, target_col_name_iter)
+                if provisional_gdp_df is not None and not provisional_gdp_df.empty:
+                    series_data[target_col_name_iter] = provisional_gdp_df.iloc[:, 0].rename(target_col_name_iter)
+                    debug_print(f"[DataManager] Provisorische BIP-Daten für {country_name_iter} erfolgreich geladen.")
+                else:
+                    # Wenn weder API noch provisorische CSV erfolgreich waren, markieren für generischen CSV-Fallback
+                    debug_print(f"[DataManager] Keine API- oder provisorischen CSV-Daten für {country_name_iter} gefunden. Markiere für generischen Fallback.")
+                    if target_col_name_iter not in series_data:
+                         series_data[target_col_name_iter] = None # Signalisiert Notwendigkeit für generischen Fallback
 
-        if needs_csv_fallback_for_any:
+
+        # Generischer CSV-Fallback (BIP_DATA_LIVE_CSV / BIP_DATA_FALLBACK_CSV)
+        # Diese Logik greift jetzt nur noch, wenn für eines der Länder series_data[target_col_name_iter] immer noch None ist
+        generic_csv_bip_df = None
+        needs_generic_csv_fallback = any(s is None for s in series_data.values())
+
+        if needs_generic_csv_fallback:
+            debug_print(f"[DataManager] Versuche generischen CSV-Fallback (live/fallback CSVs), da spezifische Daten für mindestens ein Land fehlen.")
             try:
-                # _load_bip_csv erwartet die Zielspaltennamen, um die richtigen Spalten aus der CSV zu laden oder umzubenennen.
-                # Es ist besser, wenn _load_bip_csv das gesamte relevante CSV lädt und wir dann auswählen.
-                # Für diese Implementierung passen wir an, dass _load_bip_csv nur die benötigten Spalten lädt.
-                # Wenn wir jedoch mischen (ein Land API, ein Land CSV), müssen wir das CSV trotzdem laden.
-
-                # Lade CSV, wenn irgendein Wert None ist. _load_bip_csv sollte so angepasst werden,
-                # dass es die Spalten target_col_name1 und target_col_name2 zurückgibt,
-                # auch wenn es aus bip_data.csv (fallback) mit BIP_Land_A/B liest.
-                print(f"[DataManager] Lade BIP-Daten aus CSV, da API-Daten nicht für alle Länder verfügbar oder angefordert.")
-                csv_bip_df = self._load_bip_csv(BIP_DATA_LIVE_CSV, target_col_name1, target_col_name2, is_fallback=False)
+                generic_csv_bip_df = self._load_bip_csv(BIP_DATA_LIVE_CSV, target_col_name1, target_col_name2, is_fallback=False)
             except FileNotFoundError:
-                print(f"[DataManager] 'Live' BIP-Datei ({BIP_DATA_LIVE_CSV}) nicht gefunden. Versuche Fallback-CSV.")
+                debug_print(f"[DataManager] 'Live' BIP-Datei ({BIP_DATA_LIVE_CSV}) nicht gefunden. Versuche Fallback-CSV.")
                 try:
-                    csv_bip_df = self._load_bip_csv(BIP_DATA_FALLBACK_CSV, target_col_name1, target_col_name2, is_fallback=True)
+                    generic_csv_bip_df = self._load_bip_csv(BIP_DATA_FALLBACK_CSV, target_col_name1, target_col_name2, is_fallback=True)
                 except Exception as e_fallback_csv:
-                    print(f"[DataManager] FEHLER auch beim Laden von Fallback-BIP-Daten ({BIP_DATA_FALLBACK_CSV}): {e_fallback_csv}")
-                    # Wenn CSV fehlschlägt und API-Daten fehlen, können wir nicht fortfahren
-                    if series_data.get(target_col_name1) is None and series_data.get(target_col_name2) is None:
-                        return pd.DataFrame(), None, None
+                    debug_print(f"[DataManager] FEHLER auch beim Laden von Fallback-BIP-Daten ({BIP_DATA_FALLBACK_CSV}): {e_fallback_csv}")
+                    # Keine Aktion hier, da wir unten prüfen, ob Daten vorhanden sind
             except Exception as e_csv:
-                print(f"[DataManager] Allgemeiner Fehler beim Laden von CSV-BIP-Daten: {e_csv}")
-                if series_data.get(target_col_name1) is None and series_data.get(target_col_name2) is None:
-                    return pd.DataFrame(), None, None
+                debug_print(f"[DataManager] Allgemeiner Fehler beim Laden von generischen CSV-BIP-Daten: {e_csv}")
 
-        # Kombiniere API und CSV Daten
+        # Kombiniere API, provisorische CSV und generische CSV Daten
         final_bip_data_list = []
         for i, target_col_name_iter in enumerate([target_col_name1, target_col_name2]):
-            if series_data.get(target_col_name_iter) is not None: # API-Daten haben Vorrang
+            country_name_iter = country1_name if i == 0 else country2_name # Für Logging
+            if series_data.get(target_col_name_iter) is not None: # API oder provisorische CSV Daten haben Vorrang
+                debug_print(f"[DataManager] Nutze API/provisorische Daten für {country_name_iter} ({target_col_name_iter}).")
                 final_bip_data_list.append(series_data[target_col_name_iter])
-            elif csv_bip_df is not None and target_col_name_iter in csv_bip_df:
-                final_bip_data_list.append(csv_bip_df[target_col_name_iter])
+            elif generic_csv_bip_df is not None and target_col_name_iter in generic_csv_bip_df: # Fallback auf generische CSV
+                debug_print(f"[DataManager] Nutze Daten aus generischem CSV für {country_name_iter} ({target_col_name_iter}).")
+                final_bip_data_list.append(generic_csv_bip_df[target_col_name_iter])
             else:
-                # Sollte nicht passieren, wenn Logik oben korrekt ist und CSV-Fallback funktioniert
-                print(f"[DataManager] FEHLER: Keine Datenquelle für {target_col_name_iter} gefunden.")
-                return pd.DataFrame(), None, None # Kritischer Fehler
+                debug_print(f"[DataManager] FEHLER: Keine Datenquelle (API, provisorisch, oder generisch CSV) für {country_name_iter} ({target_col_name_iter}) gefunden.")
+                return pd.DataFrame(), None, None
 
         if len(final_bip_data_list) == 2:
             # pd.concat auf axis=1, um die Series zu einem DataFrame zu verbinden
