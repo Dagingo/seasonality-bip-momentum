@@ -68,12 +68,30 @@ class Portfolio:
                 # Nimm die letzte Zeile und daraus den 'Close'-Wert
                 last_row_with_price = relevant_data.tail(1)
                 if not last_row_with_price.empty:
-                    price_value = last_row_with_price['Close'].iloc[0]
-                    if pd.api.types.is_scalar(price_value):
-                        return float(price_value)
+                    price_value_candidate = last_row_with_price['Close'].iloc[0]
+
+                    final_price_scalar = None
+                    if pd.api.types.is_scalar(price_value_candidate):
+                        final_price_scalar = float(price_value_candidate)
+                    elif isinstance(price_value_candidate, pd.Series):
+                        # Wenn es eine Series ist, versuchen wir, den einzelnen Wert zu extrahieren
+                        if not price_value_candidate.empty:
+                            try:
+                                final_price_scalar = float(price_value_candidate.item())
+                                # print(f"[Portfolio] Info: Extracted scalar price for {ticker} on {date} from Series using .item()")
+                            except ValueError: # Falls .item() fehlschlägt (mehr als ein Element)
+                                try:
+                                    final_price_scalar = float(price_value_candidate.iloc[0])
+                                    # print(f"[Portfolio] Info: Extracted scalar price for {ticker} on {date} from Series using .iloc[0]")
+                                except Exception as e:
+                                    print(f"[Portfolio] Warning: Could not extract single item from price Series for {ticker} on {date}: {e}. Series was: {price_value_candidate}")
+                        else:
+                            print(f"[Portfolio] Warning: Price candidate for {ticker} on {date} was an empty Series.")
+
+                    if final_price_scalar is not None:
+                        return final_price_scalar
                     else:
-                        # This case indicates an unexpected data structure if iloc[0] on a Series from a single row/column slice doesn't return a scalar.
-                        print(f"[Portfolio] Warning: get_current_price for {ticker} on {date} extracted non-scalar price: {price_value} using tail(1). Returning None.")
+                        print(f"[Portfolio] Warning: get_current_price for {ticker} on {date} could not resolve to a scalar price. Candidate was: {price_value_candidate}. Returning None.")
                         return None
                 else:
                     # This case should ideally not be reached if relevant_data was not empty.
