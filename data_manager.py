@@ -183,18 +183,27 @@ class DataManager:
     #     return None
 
 
-    def get_forex_data(self, forex_pair_code, start_date, end_date):
+    def get_forex_data(self, forex_pair_ticker, start_date, end_date): # Parameter umbenannt für Klarheit
         """
-        Lädt historische Forex-Daten für das angegebene Paar (z.B. "EURUSD") und den Zeitraum mittels yfinance.
+        Lädt historische Forex-Daten für das angegebene Paar und den Zeitraum mittels yfinance.
+        forex_pair_ticker: Kann der Basiscode (z.B. "EURUSD") oder der volle yf-Ticker ("EURUSD=X") sein.
         """
-        print(f"[DataManager] Lade Forex-Daten für {forex_pair_code} von {start_date} bis {end_date} via yfinance.")
-        ticker = f"{forex_pair_code}=X" # yfinance Ticker-Format, z.B. EURUSD=X
+        # Stelle sicher, dass der Ticker das Suffix "=X" hat, aber nicht doppelt.
+        if isinstance(forex_pair_ticker, str) and forex_pair_ticker.upper().endswith("=X"):
+            ticker = forex_pair_ticker.upper()
+        elif isinstance(forex_pair_ticker, str):
+            ticker = f"{forex_pair_ticker.upper()}=X"
+        else: # Fallback für unerwarteten Typ
+            debug_print(f"[DataManager] FEHLER: forex_pair_ticker hat unerwarteten Typ: {type(forex_pair_ticker)}. Wert: {forex_pair_ticker}")
+            return pd.DataFrame()
+
+        debug_print(f"[DataManager] Lade Forex-Daten für {ticker} von {start_date} bis {end_date} via yfinance.")
         try:
             # Lade Daten, progress=False um Terminal-Ausgaben zu reduzieren
             daten = yf.download(ticker, start=start_date, end=end_date, progress=False, auto_adjust=True)
 
             if daten.empty:
-                print(f"[DataManager] Keine Forex-Daten für {ticker} im Zeitraum {start_date}-{end_date} gefunden.")
+                debug_print(f"[DataManager] Keine Forex-Daten für {ticker} im Zeitraum {start_date}-{end_date} gefunden.")
                 return pd.DataFrame()
 
             # yfinance liefert typischerweise 'Close'. 'Adj Close' ist bei Forex seltener relevant.
