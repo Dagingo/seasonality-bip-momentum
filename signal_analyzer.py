@@ -245,6 +245,45 @@ class SignalAnalyzer:
 
         return final_signal
 
+    def apply_signal_cooldown(self, signal_series: pd.Series, cooldown_days: int = 5):
+        """
+        Applies a cooldown period to signals. After a signal (1 or -1) is emitted,
+        no new signal will be emitted for the specified number of cooldown_days.
+        Any signals within this cooldown period are set to 0 (neutral).
+
+        Args:
+            signal_series (pd.Series): The input signal series (1, -1, 0).
+            cooldown_days (int): The number of days for the cooldown period.
+
+        Returns:
+            pd.Series: The signal series with cooldown applied.
+        """
+        if cooldown_days <= 0:
+            return signal_series # No cooldown if period is zero or negative
+
+        debug_print(f"Anwende Signals-Cooldown von {cooldown_days} Tagen.")
+
+        # Erstelle eine Kopie, um die Originalserie nicht zu verändern (obwohl generiere_signale bereits eine neue Serie zurückgibt)
+        # Die Logik hier erstellt eine komplett neue Serie.
+        filtered_signals = pd.Series(0, index=signal_series.index, name=signal_series.name)
+
+        # Finde die Zeitpunkte, an denen ein ursprüngliches Signal (nicht 0) vorliegt
+        original_signal_dates = signal_series[signal_series != 0].index
+
+        last_active_signal_date = pd.Timestamp.min # Initialisiere mit einem sehr frühen Datum
+
+        for current_signal_date in original_signal_dates:
+            # Prüfe, ob das aktuelle Signal außerhalb der Cooldown-Periode des letzten aktiven Signals liegt
+            if current_signal_date >= last_active_signal_date + pd.Timedelta(days=cooldown_days):
+                # Dieses Signal ist gültig
+                filtered_signals.loc[current_signal_date] = signal_series.loc[current_signal_date]
+                last_active_signal_date = current_signal_date
+            # Ansonsten bleibt das Signal in filtered_signals auf 0 (neutral) für dieses Datum
+
+        debug_print(f"Verteilung Signale nach Cooldown:\n{filtered_signals.value_counts(dropna=False)}")
+        return filtered_signals
+
+
     def plot_analyse_results(self, fig, forex_daten, saisonalitaet_values,
                              bip_roh_daten, # Bleibt für Rohdaten-Plot
                              gdp_momentum_outputs, # Tupel von compare_gdp_momentum
