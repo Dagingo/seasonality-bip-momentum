@@ -162,6 +162,8 @@ class Backtester:
                 benchmark_portfolio.record_portfolio_value(dt_current_date)
 
             signal_today = final_signals.get(current_pd_ts_date, 0)
+            self.log(f"Datum: {dt_current_date.strftime('%Y-%m-%d')}, Rohsignal: {signal_today}, Vorh. Positionen: {list(strategy_portfolio.positions.keys())}, Cash: {strategy_portfolio.cash:.2f}")
+
 
             # Freitags-Verkaufslogik (vor neuen Käufen)
             if dt_current_date.weekday() == 4:
