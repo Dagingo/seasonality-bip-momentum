@@ -7,6 +7,12 @@ import threading
 from matplotlib.figure import Figure # Importieren
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk # Importieren
 import pandas as pd # Für leere BIP-Series im Fehlerfall in _run_analyse_prozess
+import json # For saving/loading presets
+import os # For checking file existence
+
+# --- Konfigurationsdateinamen ---
+PRESETS_FILE = 'forex_presets.json'
+APP_CONFIG_FILE = 'forex_app_config.json'
 
 # --- Globale Konfiguration für Forex-Paare ---
 FOREX_PAIRS_CONFIG = [
@@ -39,6 +45,10 @@ class ForexApp:
         self.bip_plot_col_country2 = None
         self.current_gdp_long_thresh = 30.0 # Standardwert, wird von Analyse überschrieben
         self.current_gdp_short_thresh = -30.0 # Standardwert, wird von Analyse überschrieben
+
+        # Presets Initialisierung
+        self.presets = {} # Wird aus Datei geladen
+        self.app_config = {} # Für "last_used_preset"
 
 
         # Zugriff auf globale Konfiguration
@@ -102,18 +112,44 @@ class ForexApp:
         self.gdp_short_schwelle_entry = ttk.Entry(input_frame, textvariable=self.gdp_short_schwelle_var, width=18)
         self.gdp_short_schwelle_entry.grid(row=6, column=1, padx=5, pady=5, sticky=tk.EW)
 
-        # Analyse-Button
+        # --- Presets Frame ---
+        preset_frame = ttk.LabelFrame(input_frame, text="Presets", padding="10")
+        preset_frame.grid(row=7, column=0, columnspan=2, padx=5, pady=10, sticky=tk.NSEW)
+
+        ttk.Label(preset_frame, text="Preset wählen:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.preset_var = tk.StringVar()
+        self.preset_combo = ttk.Combobox(preset_frame, textvariable=self.preset_var, state="readonly", width=20)
+        self.preset_combo.grid(row=0, column=1, padx=5, pady=5, sticky=tk.EW)
+        # self.preset_combo.bind("<<ComboboxSelected>>", self._load_selected_preset) # Optional: Aktion bei Auswahl
+
+        self.load_preset_button = ttk.Button(preset_frame, text="Ausgewähltes Preset laden", command=self._load_selected_preset)
+        self.load_preset_button.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+
+        ttk.Label(preset_frame, text="Neuer Preset Name:").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        self.new_preset_name_var = tk.StringVar()
+        self.new_preset_name_entry = ttk.Entry(preset_frame, textvariable=self.new_preset_name_var, width=23) # Adjusted width
+        self.new_preset_name_entry.grid(row=2, column=1, padx=5, pady=5, sticky=tk.EW)
+
+        self.save_preset_button = ttk.Button(preset_frame, text="Aktuelle Einstellungen als Preset speichern", command=self._save_current_settings_as_preset)
+        self.save_preset_button.grid(row=3, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+
+        # TODO: Delete Preset Button (optional)
+        # self.delete_preset_button = ttk.Button(preset_frame, text="Ausgewähltes Preset löschen", command=self._delete_selected_preset_action)
+        # self.delete_preset_button.grid(row=4, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
+
+
+        # Analyse-Button (eine Zeile nach unten verschoben wegen Presets)
         self.analyse_button = ttk.Button(input_frame, text="Analyse starten", command=self.start_analyse_thread)
-        self.analyse_button.grid(row=7, column=0, columnspan=2, padx=5, pady=10, sticky=tk.EW) # Row index bleibt gleich da alte Felder ersetzt wurden
+        self.analyse_button.grid(row=8, column=0, columnspan=2, padx=5, pady=10, sticky=tk.EW)
 
         # Fortschrittsanzeige (ProgressBar)
         self.progress_bar = ttk.Progressbar(input_frame, mode='indeterminate')
-        self.progress_bar.grid(row=8, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW) # Row index bleibt gleich
+        self.progress_bar.grid(row=9, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
 
         # Status Label
         self.status_var = tk.StringVar(value="Bereit.")
         self.status_label = ttk.Label(input_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        self.status_label.grid(row=9, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW) # Row index bleibt gleich
+        self.status_label.grid(row=10, column=0, columnspan=2, padx=5, pady=5, sticky=tk.EW)
 
         # --- Frame für Plot und Debug-Konsole (rechts neben Eingabe) ---
         output_frame = ttk.Frame(main_frame)
@@ -150,8 +186,161 @@ class ForexApp:
 
         # Setze den Debug-Callback für den SignalAnalyzer einmalig nach Initialisierung der GUI-Komponenten
         analyzer_set_debug_callback(self.log_message)
+
+        # Lade Presets und App-Konfiguration beim Start
+        self._load_app_config_file() # Muss vor _load_presets_from_file sein, falls presets leer ist und wir defaults brauchen
+        self._load_presets_from_file()
+        # self._load_last_used_preset_on_startup() # Wird später implementiert, nachdem GUI-Elemente für Presets da sind
+        self._populate_preset_combobox() # Initialisiere Combobox mit geladenen Presets
+        self._load_last_used_preset_on_startup() # Versuche, das letzte Preset zu laden
+
         self.log_message("ForexApp GUI initialisiert und Layout erstellt.")
 
+
+    # --- Preset Kernlogik ---
+    def _get_current_settings_as_dict(self):
+        """Sammelt aktuelle GUI-Einstellungen in einem Dictionary."""
+        return {
+            "forex_pair": self.forex_pair_var.get(),
+            "start_date": self.start_date_var.get(),
+            "end_date": self.end_date_var.get(),
+            "saison_kauf": self.saison_kauf_var.get(),
+            "saison_verkauf": self.saison_verkauf_var.get(),
+            "gdp_long": self.gdp_long_schwelle_var.get(),
+            "gdp_short": self.gdp_short_schwelle_var.get()
+        }
+
+    def _apply_settings_from_dict(self, settings_dict):
+        """Wendet Einstellungen aus einem Dictionary auf die GUI an."""
+        self.forex_pair_var.set(settings_dict.get("forex_pair", self.forex_pair_display_names[0] if self.forex_pair_display_names else ""))
+        self.start_date_var.set(settings_dict.get("start_date", datetime.today().strftime("%Y-%m-%d")))
+        self.end_date_var.set(settings_dict.get("end_date", (datetime.today() - timedelta(days=365)).strftime("%Y-%m-%d")))
+        self.saison_kauf_var.set(settings_dict.get("saison_kauf", "0.01"))
+        self.saison_verkauf_var.set(settings_dict.get("saison_verkauf", "-0.01"))
+        self.gdp_long_schwelle_var.set(settings_dict.get("gdp_long", "30.0"))
+        self.gdp_short_schwelle_var.set(settings_dict.get("gdp_short", "-30.0"))
+        self.log_message(f"Einstellungen aus Preset '{settings_dict.get('_preset_name_', 'Unbekannt')}' geladen.")
+
+
+    def _populate_preset_combobox(self):
+        """Aktualisiert die Preset-Combobox mit den Namen der geladenen Presets."""
+        preset_names = list(self.presets.keys())
+        self.preset_combo['values'] = preset_names
+        if preset_names:
+            current_selection = self.preset_var.get()
+            if current_selection in preset_names:
+                self.preset_combo.set(current_selection) # Behalte aktuelle Auswahl wenn möglich
+            else:
+                self.preset_combo.set(preset_names[0]) # Sonst wähle erstes Element
+        else:
+            self.preset_combo.set('') # Leere Combobox, wenn keine Presets
+
+    def _save_current_settings_as_preset(self):
+        """Speichert die aktuellen GUI-Einstellungen als neues Preset."""
+        preset_name = self.new_preset_name_var.get()
+        if not preset_name:
+            messagebox.showerror("Preset Fehler", "Bitte einen Namen für das Preset eingeben.")
+            return
+
+        current_settings = self._get_current_settings_as_dict()
+        self.presets[preset_name] = current_settings
+        self._save_presets_to_file()
+        self._populate_preset_combobox() # Combobox aktualisieren
+        self.preset_var.set(preset_name) # Das neue Preset auswählen
+
+        # Speichere als "last_used_preset"
+        self.app_config['last_used_preset_name'] = preset_name
+        self._save_app_config_to_file()
+
+        self.log_message(f"Preset '{preset_name}' erfolgreich gespeichert.")
+        self.new_preset_name_var.set("") # Eingabefeld leeren
+
+    def _load_selected_preset(self):
+        """Lädt die Einstellungen des in der Combobox ausgewählten Presets."""
+        preset_name = self.preset_var.get()
+        if not preset_name:
+            messagebox.showwarning("Preset Info", "Kein Preset zum Laden ausgewählt.")
+            return
+
+        if preset_name in self.presets:
+            settings_to_load = self.presets[preset_name].copy() # Kopie machen
+            settings_to_load['_preset_name_'] = preset_name # Für Logging in _apply_settings
+            self._apply_settings_from_dict(settings_to_load)
+
+            # Speichere als "last_used_preset"
+            self.app_config['last_used_preset_name'] = preset_name
+            self._save_app_config_to_file()
+        else:
+            messagebox.showerror("Preset Fehler", f"Preset '{preset_name}' nicht gefunden.")
+            self.log_message(f"FEHLER: Preset '{preset_name}' beim Laden nicht gefunden.")
+
+    def _load_last_used_preset_on_startup(self):
+        """Lädt das zuletzt verwendete Preset beim Start der Anwendung."""
+        last_used_name = self.app_config.get('last_used_preset_name')
+        if last_used_name and last_used_name in self.presets:
+            self.log_message(f"Lade zuletzt verwendetes Preset: '{last_used_name}'")
+            self.preset_var.set(last_used_name) # Setzt Combobox-Auswahl
+            self._load_selected_preset() # Lädt die Einstellungen in die GUI
+        elif self.presets: # Wenn es Presets gibt, aber kein "last_used" oder ungültig
+            first_preset_name = list(self.presets.keys())[0]
+            self.preset_var.set(first_preset_name)
+            # Optional: auch das erste Preset direkt laden
+            # self._load_selected_preset()
+            self.log_message(f"Kein 'last_used_preset' gefunden oder ungültig. Erstes verfügbares Preset '{first_preset_name}' ausgewählt.")
+        else:
+            self.log_message("Keine Presets und kein 'last_used_preset' gefunden.")
+
+
+    # --- Preset und App Config Datei-Hilfsfunktionen ---
+    def _load_presets_from_file(self):
+        if os.path.exists(PRESETS_FILE):
+            try:
+                with open(PRESETS_FILE, 'r') as f:
+                    self.presets = json.load(f)
+                self.log_message(f"Presets erfolgreich aus {PRESETS_FILE} geladen.")
+            except json.JSONDecodeError:
+                self.log_message(f"FEHLER: {PRESETS_FILE} enthält ungültiges JSON. Initialisiere mit leeren Presets.")
+                self.presets = {}
+            except Exception as e:
+                self.log_message(f"FEHLER beim Laden von Presets aus {PRESETS_FILE}: {e}. Initialisiere mit leeren Presets.")
+                self.presets = {}
+        else:
+            self.log_message(f"{PRESETS_FILE} nicht gefunden. Initialisiere mit leeren Presets.")
+            self.presets = {}
+
+    def _save_presets_to_file(self):
+        try:
+            with open(PRESETS_FILE, 'w') as f:
+                json.dump(self.presets, f, indent=4)
+            self.log_message(f"Presets erfolgreich in {PRESETS_FILE} gespeichert.")
+        except Exception as e:
+            self.log_message(f"FEHLER beim Speichern von Presets in {PRESETS_FILE}: {e}")
+
+    def _load_app_config_file(self): # Renamed to avoid conflict with future method
+        if os.path.exists(APP_CONFIG_FILE):
+            try:
+                with open(APP_CONFIG_FILE, 'r') as f:
+                    self.app_config = json.load(f)
+                self.log_message(f"App-Konfiguration erfolgreich aus {APP_CONFIG_FILE} geladen.")
+            except json.JSONDecodeError:
+                self.log_message(f"FEHLER: {APP_CONFIG_FILE} enthält ungültiges JSON. Initialisiere mit leerer Konfig.")
+                self.app_config = {}
+            except Exception as e:
+                self.log_message(f"FEHLER beim Laden der App-Konfiguration aus {APP_CONFIG_FILE}: {e}. Initialisiere mit leerer Konfig.")
+                self.app_config = {}
+        else:
+            self.log_message(f"{APP_CONFIG_FILE} nicht gefunden. Initialisiere mit leerer Konfig.")
+            self.app_config = {}
+
+    def _save_app_config_to_file(self): # Renamed
+        try:
+            with open(APP_CONFIG_FILE, 'w') as f:
+                json.dump(self.app_config, f, indent=4)
+            self.log_message(f"App-Konfiguration erfolgreich in {APP_CONFIG_FILE} gespeichert.")
+        except Exception as e:
+            self.log_message(f"FEHLER beim Speichern der App-Konfiguration in {APP_CONFIG_FILE}: {e}")
+
+    # --- Ende Preset und App Config Datei-Hilfsfunktionen ---
 
     def log_message(self, message):
         """Schreibt eine Nachricht in das Debug-Textfeld und die Konsole."""
