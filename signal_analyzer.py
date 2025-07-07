@@ -281,10 +281,10 @@ class SignalAnalyzer:
 
                 if not kauf_zeitpunkte_valid.empty:
                     ax1.plot(kauf_zeitpunkte_valid, forex_daten.loc[kauf_zeitpunkte_valid, self.PRICE_COLUMN],
-                             '^', markersize=8, color='green', label='Kaufsignal', alpha=0.9, linestyle='None')
+                             '^', markersize=8, color='green', label='Long Signal', alpha=0.9, linestyle='None') # Geändert
                 if not verkauf_zeitpunkte_valid.empty:
                     ax1.plot(verkauf_zeitpunkte_valid, forex_daten.loc[verkauf_zeitpunkte_valid, self.PRICE_COLUMN],
-                             'v', markersize=8, color='red', label='Verkaufssignal', alpha=0.9, linestyle='None')
+                             'v', markersize=8, color='red', label='Short Signal', alpha=0.9, linestyle='None') # Geändert
             ax1.set_title('Forex Kurs und Handelssignale')
             ax1.set_ylabel('Preis')
         else:
@@ -295,12 +295,12 @@ class SignalAnalyzer:
         # Plot 2: Saisonalität
         ax2 = ax[1]
         if not saisonalitaet_values.empty:
-            ax2.plot(saisonalitaet_values.index, saisonalitaet_values, label='Saisonaler Trend', color='orange')
+            ax2.plot(saisonalitaet_values.index, saisonalitaet_values, label='Saisonaler Trend (wöchentlich)', color='orange') # Klärstellung wöchentlich
             ax2.axhline(0, color='grey', linestyle='--', linewidth=0.8)
-            ax2.axhline(self.schwelle_saisonalitaet_kauf, color='lightgreen', linestyle=':', linewidth=0.8, label=f'Kauf-Schwelle ({self.schwelle_saisonalitaet_kauf:.4f})')
-            ax2.axhline(self.schwelle_saisonalitaet_verkauf, color='lightcoral', linestyle=':', linewidth=0.8, label=f'Verkauf-Schwelle ({self.schwelle_saisonalitaet_verkauf:.4f})')
-            ax2.set_title('Saisonalitätstrend')
-            ax2.set_ylabel('Durchschn. mtl. Return')
+            ax2.axhline(self.schwelle_saisonalitaet_kauf, color='lightgreen', linestyle=':', linewidth=0.8, label=f'Saison. Long-Schwelle ({self.schwelle_saisonalitaet_kauf:.4f})') # Geändert
+            ax2.axhline(self.schwelle_saisonalitaet_verkauf, color='lightcoral', linestyle=':', linewidth=0.8, label=f'Saison. Short-Schwelle ({self.schwelle_saisonalitaet_verkauf:.4f})') # Geändert
+            ax2.set_title('Saisonalitätstrend (wöchentlich)') # Klärstellung wöchentlich
+            ax2.set_ylabel('Durchschn. wöch. Return') # Geändert
         else:
             ax2.text(0.5, 0.5, "Keine Saisonalitätsdaten", ha='center', va='center', transform=ax2.transAxes)
         ax2.legend(loc='upper left')
