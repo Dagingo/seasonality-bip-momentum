@@ -5,7 +5,7 @@ from data_manager import DataManager # Importieren
 from signal_analyzer import SignalAnalyzer, set_debug_output_callback as analyzer_set_debug_callback, compare_gdp_momentum
 import threading
 from matplotlib.figure import Figure # Importieren
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg # Importieren
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk # Importieren
 import pandas as pd # Für leere BIP-Series im Fehlerfall in _run_analyse_prozess
 
 # --- Globale Konfiguration für Forex-Paare ---
@@ -127,7 +127,14 @@ class ForexApp:
         self.plot_figure = Figure(figsize=(8, 6), dpi=150) # Erhöhte DPI für höhere Auflösung
         self.plot_canvas = FigureCanvasTkAgg(self.plot_figure, master=plot_frame)
         self.canvas_widget = self.plot_canvas.get_tk_widget()
-        self.canvas_widget.pack(fill=tk.BOTH, expand=True)
+
+        # Matplotlib Navigation Toolbar hinzufügen
+        toolbar_frame = ttk.Frame(plot_frame) # Eigener Frame für Toolbar, um Layout zu steuern
+        toolbar_frame.pack(side=tk.TOP, fill=tk.X)
+        toolbar = NavigationToolbar2Tk(self.plot_canvas, toolbar_frame)
+        toolbar.update() # Wichtig für die Initialanzeige
+
+        self.canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True) # Canvas unter der Toolbar packen
         # Initial leeren Plot zeichnen oder eine Nachricht anzeigen
         self._clear_plot()
 

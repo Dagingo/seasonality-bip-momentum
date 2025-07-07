@@ -334,7 +334,7 @@ class SignalAnalyzer:
                 handles_ax3.append(line_b)
                 labels_ax3.append(f'GDP Mom. {bip_col_country2 or "B"} (skaliert)')
 
-            ax3.set_ylabel('Skaliertes GDP Momentum [-100, 100]')
+            ax3.set_ylabel('Skaliertes GDP Momentum [-100, 100]') # Präzisere Achsenbeschriftung
         else:
             # Fallback, falls keine GDP Momentum Daten vorhanden sind (z.B. wenn compare_gdp_momentum nichts zurückgibt)
             ax3.text(0.5, 0.5, "Keine GDP Momentum Daten verfügbar", ha='center', va='center', transform=ax3.transAxes)
