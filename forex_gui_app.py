@@ -16,13 +16,46 @@ PRESETS_FILE = 'forex_presets.json'
 APP_CONFIG_FILE = 'forex_app_config.json'
 
 # --- Globale Konfiguration für Forex-Paare ---
+# yfinance-kompatibler Ticker direkt in 'pair_code'
 FOREX_PAIRS_CONFIG = [
-    {"display": "EUR/USD", "pair_code": "EURUSD", "country1": "Eurozone", "country2": "USA", "base_curr": "EUR", "quote_curr": "USD"},
-    {"display": "GBP/JPY", "pair_code": "GBPJPY", "country1": "UK", "country2": "Japan", "base_curr": "GBP", "quote_curr": "JPY"},
-    {"display": "USD/CHF", "pair_code": "USDCHF", "country1": "USA", "country2": "Switzerland", "base_curr": "USD", "quote_curr": "CHF"},
-    {"display": "AUD/CAD", "pair_code": "AUDCAD", "country1": "Australia", "country2": "Canada", "base_curr": "AUD", "quote_curr": "CAD"}
+    # Bestehende
+    {"display": "EUR/USD", "pair_code": "EURUSD=X", "country1": "Eurozone", "country2": "USA", "base_curr": "EUR", "quote_curr": "USD"},
+    {"display": "GBP/JPY", "pair_code": "GBPJPY=X", "country1": "UK", "country2": "Japan", "base_curr": "GBP", "quote_curr": "JPY"},
+    {"display": "USD/CHF", "pair_code": "USDCHF=X", "country1": "USA", "country2": "Switzerland", "base_curr": "USD", "quote_curr": "CHF"},
+    {"display": "AUD/CAD", "pair_code": "AUDCAD=X", "country1": "Australia", "country2": "Canada", "base_curr": "AUD", "quote_curr": "CAD"},
+
+    # Neue G20 Paare - USD basiert
+    # {"display": "USD/ARS", "pair_code": "ARS=X", "country1": "USA", "country2": "Argentina", "base_curr": "USD", "quote_curr": "ARS"}, # Ausgelassen wegen Datenproblemen
+    {"display": "USD/BRL", "pair_code": "BRL=X", "country1": "USA", "country2": "Brazil", "base_curr": "USD", "quote_curr": "BRL"},
+    {"display": "USD/CNY", "pair_code": "CNY=X", "country1": "USA", "country2": "China", "base_curr": "USD", "quote_curr": "CNY"},
+    {"display": "USD/INR", "pair_code": "INR=X", "country1": "USA", "country2": "India", "base_curr": "USD", "quote_curr": "INR"},
+    {"display": "USD/IDR", "pair_code": "IDR=X", "country1": "USA", "country2": "Indonesia", "base_curr": "USD", "quote_curr": "IDR"},
+    {"display": "USD/MXN", "pair_code": "MXN=X", "country1": "USA", "country2": "Mexico", "base_curr": "USD", "quote_curr": "MXN"},
+    {"display": "USD/RUB", "pair_code": "RUB=X", "country1": "USA", "country2": "Russia", "base_curr": "USD", "quote_curr": "RUB"},
+    {"display": "USD/SAR", "pair_code": "SAR=X", "country1": "USA", "country2": "Saudi Arabia", "base_curr": "USD", "quote_curr": "SAR"},
+    {"display": "USD/ZAR", "pair_code": "ZAR=X", "country1": "USA", "country2": "South Africa", "base_curr": "USD", "quote_curr": "ZAR"},
+    {"display": "USD/KRW", "pair_code": "KRW=X", "country1": "USA", "country2": "South Korea", "base_curr": "USD", "quote_curr": "KRW"},
+    {"display": "USD/TRY", "pair_code": "TRY=X", "country1": "USA", "country2": "Turkey", "base_curr": "USD", "quote_curr": "TRY"},
+
+    # Neue G20 Paare - EUR basiert
+    {"display": "EUR/AUD", "pair_code": "EURAUD=X", "country1": "Eurozone", "country2": "Australia", "base_curr": "EUR", "quote_curr": "AUD"},
+    {"display": "EUR/CAD", "pair_code": "EURCAD=X", "country1": "Eurozone", "country2": "Canada", "base_curr": "EUR", "quote_curr": "CAD"},
+    {"display": "EUR/CNY", "pair_code": "EURCNY=X", "country1": "Eurozone", "country2": "China", "base_curr": "EUR", "quote_curr": "CNY"},
+    {"display": "EUR/INR", "pair_code": "EURINR=X", "country1": "Eurozone", "country2": "India", "base_curr": "EUR", "quote_curr": "INR"},
+    {"display": "EUR/JPY", "pair_code": "EURJPY=X", "country1": "Eurozone", "country2": "Japan", "base_curr": "EUR", "quote_curr": "JPY"},
+    {"display": "EUR/GBP", "pair_code": "EURGBP=X", "country1": "Eurozone", "country2": "UK", "base_curr": "EUR", "quote_curr": "GBP"},
+    {"display": "EUR/TRY", "pair_code": "EURTRY=X", "country1": "Eurozone", "country2": "Turkey", "base_curr": "EUR", "quote_curr": "TRY"},
+
+    # Neue G20 Paare - Andere Crosses
+    {"display": "AUD/JPY", "pair_code": "AUDJPY=X", "country1": "Australia", "country2": "Japan", "base_curr": "AUD", "quote_curr": "JPY"},
+    {"display": "CAD/JPY", "pair_code": "CADJPY=X", "country1": "Canada", "country2": "Japan", "base_curr": "CAD", "quote_curr": "JPY"},
+    {"display": "GBP/AUD", "pair_code": "GBPAUD=X", "country1": "UK", "country2": "Australia", "base_curr": "GBP", "quote_curr": "AUD"},
 ]
 FOREX_PAIR_DISPLAY_NAMES = [p["display"] for p in FOREX_PAIRS_CONFIG]
+
+# --- Backtester Logik ---
+# Die Backtester-Klasse wird in backtester.py definiert und hier importiert.
+# Eine Instanz wird in ForexApp.__init__ erstellt.
 
 
 class ForexApp:

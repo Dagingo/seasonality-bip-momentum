@@ -1,87 +1,105 @@
-# Forex Signal Generator mit GUI
+# Forex Signal Generator & Backtester mit GUI
 
-Dieses Projekt implementiert einen Forex-Signal-Generator mit einer grafischen Benutzeroberfläche (GUI), der Kauf- und Verkaufssignale für ausgewählte Währungspaare auf Basis von zwei Indikatoren generiert: Saisonalität und BIP-Momentum-Vergleich.
+Dieses Projekt implementiert einen Forex-Signal-Generator und ein Backtesting-Framework mit einer grafischen Benutzeroberfläche (GUI). Es generiert Kauf- und Verkaufssignale für eine erweiterte Auswahl von Währungspaaren (inklusive G20-Kombinationen) basierend auf Saisonalität und BIP-Wachstumsmomentum. Die generierten Signale können anschließend in einem integrierten Backtester auf ihre historische Performance überprüft werden, verglichen mit einer Buy-and-Hold-Strategie des SPX-Index.
 
-## Funktionen
+## Hauptfunktionen
 
 *   **Grafische Benutzeroberfläche (GUI):**
-    *   Gebaut mit Tkinter für eine leichtgewichtige Desktop-Anwendung.
-    *   Auswahl des Forex-Paares (z.B. EUR/USD, GBP/JPY).
-    *   Auswahl des Analysezeitraums (Start- und Enddatum).
-    *   Eingabe von benutzerdefinierten Schwellenwerten für den Saisonalitätsindikator.
-    *   Button zum Starten der Analyse.
-    *   Fortschrittsanzeige während der Datenverarbeitung.
-    *   Integrierte Debug-Konsole zur Anzeige von Log-Meldungen.
-    *   Visualisierung der Ergebnisse (Forex-Kurse, Indikatoren, Signale) direkt in der GUI mittels Matplotlib.
-*   **Datenanbindung:**
-    *   Abruf von historischen Forex-Kursdaten über `yfinance` (Yahoo Finance API).
-    *   Laden von BIP-Daten (Bruttoinlandsprodukt) aus einer mitgelieferten CSV-Datei (`bip_data_live.csv`).
-    *   Fallback auf eine ältere BIP-Datendatei (`bip_data.csv`), falls die primäre CSV nicht verfügbar ist.
-*   **Analyse-Indikatoren:**
-    *   **Saisonalität:** Analysiert historische Kursdaten auf monatlicher Basis, um typische saisonale Trends zu identifizieren.
-    *   **GDP-Momentum-Vergleich (NEU):**
-        *   Berechnet die Wachstumsraten (z.B. über 4 Quartale für YoY) für die BIP-Zeitreihen zweier Länder/Regionen.
-        *   Normalisiert diese Wachstumsraten für jedes Land separat auf einen skalierten Wert von -100 bis 100 (Min-Max-Skalierung über die Historie der Wachstumsraten).
-        *   Berechnet die Differenz dieser skalierten Momentum-Werte (`momentum_A - momentum_B`).
-        *   Ein Long-Signal wird generiert, wenn diese Differenz einen benutzerdefinierten positiven Schwellenwert (z.B. 30) übersteigt.
-        *   Ein Short-Signal wird generiert, wenn die Differenz einen benutzerdefinierten negativen Schwellenwert (z.B. -30) unterschreitet.
-        *   Die Schwellenwerte für diese Differenz sind in der GUI konfigurierbar.
-*   **Signalerzeugung:** Kombiniert die Signale aus Saisonalität und dem GDP-Momentum-Vergleich zu einem finalen Kauf-, Verkaufs- oder Haltensignal.
-*   **Modularer Aufbau:** Trennung von GUI, Datenmanagement und Analyse-Logik.
+    *   Gebaut mit Tkinter.
+    *   Auswahl des Forex-Paares aus einer erweiterten Liste (inkl. G20-Währungen).
+    *   Auswahl des Analyse- und Backtesting-Zeitraums.
+    *   Eingabe von benutzerdefinierten Schwellenwerten für Saisonalitäts- und BIP-Momentum-Indikatoren.
+    *   Speichern und Laden von Analyse-/Backtest-Konfigurationen als Presets.
+    *   Buttons zum Starten der Signalanalyse und des Backtests.
+    *   Fortschrittsanzeige und Statusmeldungen.
+    *   Integrierte Debug-Konsole.
+*   **Datenmanagement:**
+    *   Abruf von historischen Forex-Kursdaten über `yfinance`.
+    *   Abruf von BIP-Daten (Bruttoinlandsprodukt) über die FRED-API (via `pandas_datareader`) für viele G20-Länder.
+    *   Fallback auf provisorische, länderspezifische CSV-Dateien für BIP-Daten, falls keine API-Daten verfügbar sind (z.B. für Saudi-Arabien).
+    *   Caching von Preisdaten im Portfolio-Manager zur Effizienzsteigerung bei wiederholten Zugriffen.
+*   **Signalanalyse:**
+    *   **Saisonalität:** Analysiert historische Kursdaten auf wöchentlicher Basis.
+    *   **BIP-Momentum-Vergleich:** Vergleicht normalisierte BIP-Wachstumsraten zweier Länder/Regionen.
+    *   Kombinierte Signalerzeugung basierend auf der Übereinstimmung beider Indikatoren.
+    *   Visualisierung der Forex-Kurse, Indikatoren und Signale in einem Chart.
+*   **Backtesting-Framework:**
+    *   Simulation einer Handelsstrategie: Kauft bei Kaufsignal, verkauft bei Verkaufssignal oder am Ende jeder Woche (Freitag).
+    *   Positionsgröße: Standardmäßig 10% des Portfolio-Gesamtwerts pro Trade.
+    *   Startkapital: Standardmäßig 10.000 Einheiten der Basiswährung.
+    *   Vergleich mit einem Benchmark-Portfolio (Buy-and-Hold des SPX-Index mit gleichem Startkapital).
+    *   Visualisierung der Wertentwicklung des Strategie-Portfolios und des Benchmark-Portfolios in einem gemeinsamen Chart.
+*   **Modularer Aufbau:** Trennung von GUI (`forex_gui_app.py`), Datenmanagement (`data_manager.py`), Signalanalyse (`signal_analyzer.py`), Portfolio-Management (`portfolio_manager.py`) und Backtesting-Logik (`backtester.py`).
 
-## Struktur des Projekts
+## Technische Details & Abhängigkeiten
 
-*   `forex_gui_app.py`: Enthält die Hauptanwendung und die Tkinter GUI-Logik.
-*   `data_manager.py`: Zuständig für den Abruf und das Management von Forex- und BIP-Daten.
-*   `signal_analyzer.py`: Beinhaltet die Logik für die Berechnung der Indikatoren, die Signalerzeugung und die Erstellung der Plots.
-*   `forex_data.csv`: Sehr kleine Beispieldatei für Forex-Kurse (wird von der GUI-Version nicht primär verwendet, war Teil der ursprünglichen Konsolenversion).
-*   `bip_data_live.csv`: Enthält aktuellere (Beispiel-)BIP-Daten für verschiedene Wirtschaftsräume/Länder. Dies ist die primäre Quelle für BIP-Daten.
-*   `bip_data.csv`: Enthält ältere (Beispiel-)BIP-Daten und dient als Fallback.
-*   `README.md`: Diese Datei.
+*   Python 3.8+
+*   Tkinter (meist Teil der Standard-Python-Distribution)
+*   Pandas
+*   NumPy
+*   Matplotlib
+*   yfinance
+*   pandas_datareader
 
-## Installation
+Installation der Abhängigkeiten:
+```bash
+pip install pandas numpy matplotlib yfinance pandas_datareader
+```
 
-1.  **Python:** Stelle sicher, dass Python 3.8 oder höher installiert ist.
-2.  **Abhängigkeiten:** Installiere die benötigten Python-Bibliotheken. Du kannst dies über pip tun:
-    ```bash
-    pip install pandas numpy matplotlib yfinance
-    ```
-    (Tkinter ist normalerweise Teil der Standard-Python-Distribution.)
+## Datenquellen
 
-## Benutzung
+*   **Forex-Kursdaten:** Yahoo Finance (via `yfinance`).
+*   **BIP-Daten (API):** Federal Reserve Economic Data (FRED) über `pandas_datareader` für unterstützte Länder.
+*   **BIP-Daten (Provisorisch):** Manuell erstellte CSV-Dateien im Verzeichnis `data/gdp_provisional/` für Länder ohne direkte API-Anbindung (z.B. Saudi-Arabien). Diese dienen als Fallback und enthalten Beispieldaten.
+*   **BIP-Daten (Legacy Fallback):** `bip_data_live.csv` und `bip_data.csv` als generischer Fallback, falls weder API noch provisorische Daten gefunden werden.
 
-1.  Führe das Hauptskript aus:
+## Einrichtung & Ausführung
+
+1.  Stelle sicher, dass alle oben genannten Abhängigkeiten installiert sind.
+2.  Klone das Repository oder lade die Projektdateien herunter.
+3.  Führe das Hauptskript aus dem Root-Verzeichnis des Projekts aus:
     ```bash
     python forex_gui_app.py
     ```
-2.  Die GUI öffnet sich. Wähle im Bereich "Einstellungen":
-    *   Das gewünschte **Forex-Paar** aus dem Dropdown-Menü.
-    *   Das **Start- und Enddatum** für die Analyse (Format: JJJJ-MM-TT). Standard ist das letzte Jahr bis heute.
-    *   Die **Schwellenwerte für die Saisonalität** (als Prozentwert des monatlichen Returns, z.B. `0.05` für 0.05%).
-    *   Den **Long-Schwellenwert (GDP Diff)**: Positiver Wert (z.B. `30`). Ein Long-Signal vom GDP-Momentum wird ausgelöst, wenn die skalierte Momentum-Differenz (Land A - Land B) diesen Wert übersteigt.
-    *   Den **Short-Schwellenwert (GDP Diff)**: Negativer Wert (z.B. `-30`). Ein Short-Signal vom GDP-Momentum wird ausgelöst, wenn die skalierte Momentum-Differenz diesen Wert unterschreitet.
-3.  Klicke auf den Button **"Analyse starten"**.
-4.  Während der Analyse wird der Fortschritt angezeigt und die Eingabefelder sind gesperrt. Debug-Meldungen erscheinen in der Konsole unten rechts, inklusive der berechneten skalierten Momentum-Werte (A, B), deren Differenz und dem resultierenden GDP-Signal.
-5.  Nach Abschluss der Analyse wird der Chart im Hauptbereich der GUI aktualisiert und zeigt:
-    *   Den Forex-Kursverlauf mit markierten Kauf- (grüne Pfeile) und Verkaufssignalen (rote Pfeile).
-    *   Den Saisonalitätstrend mit den eingestellten Schwellen.
-    *   Das BIP-Momentum-Signal (und optional Roh-BIP-Daten).
 
-## Datenquellen und Hinweise
+## Kurzanleitung
 
-*   **Forex-Daten:** Werden live von Yahoo Finance über die `yfinance`-Bibliothek bezogen. Die Verfügbarkeit und Genauigkeit hängt von Yahoo Finance ab.
-*   **BIP-Daten:**
-    *   Die primäre Quelle ist die Datei `bip_data_live.csv`, die mit dem Projekt ausgeliefert wird. Diese enthält exemplarische, quartalsweise BIP-Daten. Für eine reale Anwendung müssten diese Daten regelmäßig aktualisiert und aus verlässlichen Quellen (z.B. Weltbank, Eurostat, nationale Statistikämter) bezogen werden. Der Code ist so strukturiert, dass eine Anbindung an eine API später erfolgen könnte.
-    *   `bip_data.csv` ist eine ältere Version und dient nur als Fallback, falls `bip_data_live.csv` nicht gefunden wird.
-*   **Indikatoren:** Die Implementierung der Indikatoren ist eine von vielen möglichen. Die Ergebnisse und Signale sollten kritisch bewertet und nicht als direkte Handelsaufforderung verstanden werden.
+1.  **Einstellungen vornehmen:**
+    *   Wähle ein **Forex-Paar** aus der Dropdown-Liste.
+    *   Definiere **Start- und Enddatum** für die Analyse/den Backtest.
+    *   Passe die **Schwellenwerte** für die Saisonalität (wöchentlicher Return in %) und die BIP-Momentum-Differenz an.
+    *   Optional: Speichere deine aktuellen Einstellungen als **Preset** oder lade ein bestehendes Preset.
+2.  **Signalanalyse durchführen:**
+    *   Klicke auf **"Analyse starten"**.
+    *   Der Chart zeigt den Kursverlauf, die Indikatoren (Saisonalität, BIP-Momentum-Differenz) und die generierten Handelssignale (Long/Short).
+3.  **Backtest durchführen:**
+    *   Klicke auf **"Backtest starten"**.
+    *   Der Backtest simuliert die Handelsstrategie basierend auf den aktuellen Einstellungen und den generierten Signalen.
+    *   Der Chart zeigt die Wertentwicklung des Strategie-Portfolios im Vergleich zum SPX-Benchmark-Portfolio.
+4.  **Logs verfolgen:** Die Debug-Konsole unten rechts zeigt detaillierte Log-Meldungen des Analyse- und Backtesting-Prozesses.
 
-## Mögliche Erweiterungen
+## Wichtige Hinweise
 
-*   Anbindung an eine Live-API für BIP-Daten (z.B. Weltbank).
-*   Weitere Indikatoren hinzufügen.
-*   Konfigurierbare Gewichtung der Indikatoren.
-*   Erweiterte Fehlerbehandlung und Benutzereingabevalidierung.
-*   Speichern/Laden von Konfigurationen.
-*   Backtesting-Funktionalität.
-*   Verbesserte Kalender-Widgets für die Datumsauswahl.
+*   Die bereitgestellten BIP-Daten (insbesondere die provisorischen) dienen primär Demonstrations- und Testzwecken. Für reale Anwendungen müssten verlässliche und aktuelle BIP-Datenquellen verwendet werden.
+*   Die generierten Signale und Backtesting-Ergebnisse stellen keine Anlageberatung dar und sollten kritisch hinterfragt werden. Historische Performance ist keine Garantie für zukünftige Ergebnisse.
+*   Die Qualität der Forex-Daten hängt von Yahoo Finance ab.
+
+## Dateistruktur (Wichtige Komponenten)
+
+*   `forex_gui_app.py`: Hauptanwendung, GUI-Logik.
+*   `data_manager.py`: Datenbeschaffung (Forex, BIP).
+*   `signal_analyzer.py`: Berechnung der Indikatoren und Signalerzeugung.
+*   `portfolio_manager.py`: Verwaltung von Portfoliozustand, Trades, Wertentwicklung.
+*   `backtester.py`: Durchführung des Backtests, Handelslogik.
+*   `data/gdp_provisional/`: Enthält provisorische BIP-Daten als CSV.
+*   `*.csv` (im Root): Legacy BIP-Daten und ggf. voreingestellte Forex-Daten.
+*   `forex_presets.json`, `forex_app_config.json`: Speichern von Benutzereinstellungen und Presets.
+
+## Mögliche zukünftige Erweiterungen
+
+*   Implementierung von Transaktionskosten und Slippage im Backtester.
+*   Fortgeschrittenes Risikomanagement (Stop-Loss, Take-Profit).
+*   Dynamisches Positionsgrößenmanagement.
+*   Berechnung und Anzeige detaillierter statistischer Performance-Metriken für den Backtest.
+*   Weitere Indikatoren und Strategieoptionen.
 ```
