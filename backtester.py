@@ -60,8 +60,10 @@ class Backtester:
         self.log("Portfolios initialisiert.")
 
         # 2. Daten laden
-        # Ticker für yfinance (mit =X für Forex Paare)
-        trading_ticker_yf = forex_pair_config['pair_code'] + "=X"
+        # Ticker für yfinance
+        # forex_pair_config['pair_code'] SOLLTE bereits der vollständige yfinance-Ticker sein (z.B. "EURUSD=X")
+        trading_ticker_yf = forex_pair_config['pair_code']
+        self.log(f"DEBUG: Direkt nach Zuweisung - forex_pair_config['pair_code']: '{forex_pair_config['pair_code']}', trading_ticker_yf: '{trading_ticker_yf}'")
         # Benchmark Ticker bleibt wie er ist (z.B. ^SPX)
 
         self.log(f"Lade Forex-Daten für Signalerzeugung ({trading_ticker_yf})...")
