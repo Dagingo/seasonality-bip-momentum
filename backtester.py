@@ -119,6 +119,10 @@ class Backtester:
             gdp_momentum_signal_aligned=gdp_momentum_signal_aligned_to_forex # Kann 'long', 'short', None enthalten
         )
         self.log(f"Handelssignale generiert. {len(final_signals[final_signals != 0])} aktive Signale gefunden.")
+        if not final_signals.empty:
+            self.log(f"Verteilung der generierten final_signals im Backtester:\n{final_signals.value_counts(dropna=False).to_string()}")
+        else:
+            self.log("Generierte final_signals Serie ist leer im Backtester.")
 
         # 3. Benchmark-Portfolio: Kaufe Benchmark-Ticker am ersten Handelstag und halte ihn
         # _fetch_and_cache_prices wird automatisch von get_current_price/buy aufgerufen, falls nötig.
