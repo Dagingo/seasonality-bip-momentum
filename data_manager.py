@@ -307,4 +307,40 @@ class DataManager:
             print(f"[DataManager] Ungültiges Forex-Paar-Format: {forex_pair_str}. Erwartet 6 Zeichen (z.B. EURUSD).")
             return None, None, None, None
 
+    def get_historical_price_data(self, ticker, start_date, end_date):
+        """
+        Lädt historische Preisdaten (OHLCV) für einen gegebenen Ticker und Zeitraum mittels yfinance.
+        Diese Methode ist generischer als get_forex_data.
+        """
+        print(f"[DataManager] Lade historische Preisdaten für {ticker} von {start_date} bis {end_date} via yfinance.")
+        try:
+            # Lade Daten, progress=False um Terminal-Ausgaben zu reduzieren
+            # auto_adjust=True passt 'Close' für Dividenden/Splits an und liefert 'Adj Close' als 'Close'
+            data = yf.download(ticker, start=start_date, end=end_date, progress=False, auto_adjust=True)
+
+            if data.empty:
+                print(f"[DataManager] Keine Daten für {ticker} im Zeitraum {start_date}-{end_date} gefunden.")
+                return pd.DataFrame()
+
+            # yfinance mit auto_adjust=True liefert die angepassten Kurse bereits in den Standardspalten (Open, High, Low, Close)
+            # Wir benötigen primär 'Close' und stellen sicher, dass der Index ein DatetimeIndex ist.
+            if not isinstance(data.index, pd.DatetimeIndex):
+                data.index = pd.to_datetime(data.index)
+
+            # Umbenennen der Spalte 'Close' zu 'Schlusskurs' für Konsistenz innerhalb des Projekts,
+            # aber für die Portfolio-Klasse ist 'Close' praktischer (wie in yfinance Standard).
+            # Portfolio.get_current_price erwartet 'Close'.
+            # data.rename(columns={'Close': 'Schlusskurs'}, inplace=True) # Optional, je nach Bedarf
+
+            # Sicherstellen, dass der Index 'Date' (oder 'Datum') heißt, wie von Portfolio erwartet.
+            # yfinance Index ist bereits 'Date' (oder 'Datetime').
+            data.index.name = 'Date'
+
+
+            print(f"[DataManager] Historische Preisdaten für {ticker} erfolgreich geladen. {len(data)} Einträge. Head:\n{data.head()}")
+            return data # Gibt das gesamte OHLCV DataFrame zurück
+        except Exception as e:
+            print(f"[DataManager] FEHLER beim Laden von historischen Preisdaten für {ticker} via yfinance: {e}")
+            return pd.DataFrame()
+
 print("DataManager Modul geladen.")
