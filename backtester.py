@@ -99,10 +99,10 @@ class Backtester:
                 long_threshold=gdp_long_threshold, short_threshold=gdp_short_threshold
             )
             if gdp_signal_raw is not None and not gdp_signal_raw.empty:
-                # Reindex auf den Forex-Datenindex. Fülle vorwärts, dann rückwärts, dann mit None (wird zu 0 in generiere_signale)
+                # Reindex auf den Forex-Datenindex. Fülle vorwärts, dann rückwärts.
                 temp_aligned = gdp_signal_raw.reindex(forex_data_for_signals.index, method='ffill')
                 temp_aligned = temp_aligned.bfill() # füllt NaNs am Anfang
-                gdp_momentum_signal_aligned_to_forex = temp_aligned.fillna(None) # Explizit None für fehlende Werte
+                gdp_momentum_signal_aligned_to_forex = temp_aligned
                 gdp_momentum_signal_aligned_to_forex.name = "GDP_Momentum_Signal_Aligned"
                 self.log("GDP Momentum Signale berechnet und an Forex-Daten angeglichen.")
             else:
