@@ -62,10 +62,23 @@ class Portfolio:
                  pass # Potentially convert query_date to match price_data_df.index.tz
 
             # Find the latest price on or before the query_date
-            specific_price_series = price_data_df[price_data_df.index <= query_date]
+            relevant_data = price_data_df[price_data_df.index <= query_date]
 
-            if not specific_price_series.empty and 'Close' in specific_price_series.columns:
-                return specific_price_series['Close'].iloc[-1]
+            if not relevant_data.empty and 'Close' in relevant_data.columns:
+                # Nimm die letzte Zeile und daraus den 'Close'-Wert
+                last_row_with_price = relevant_data.tail(1)
+                if not last_row_with_price.empty:
+                    price_value = last_row_with_price['Close'].iloc[0]
+                    if pd.api.types.is_scalar(price_value):
+                        return float(price_value)
+                    else:
+                        # This case indicates an unexpected data structure if iloc[0] on a Series from a single row/column slice doesn't return a scalar.
+                        print(f"[Portfolio] Warning: get_current_price for {ticker} on {date} extracted non-scalar price: {price_value} using tail(1). Returning None.")
+                        return None
+                else:
+                    # This case should ideally not be reached if relevant_data was not empty.
+                    print(f"[Portfolio] Price for {ticker} on or before {date} not found (tail(1) was unexpectedly empty).")
+                    return None
             else:
                 # Try to find the first price *after* query_date if no price on or before (e.g. market holiday)
                 # This is for cases where a trade needs to happen on the next available day
