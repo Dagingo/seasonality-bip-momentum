@@ -289,7 +289,7 @@ class SignalAnalyzer:
             ax1.set_ylabel('Preis')
         else:
             ax1.text(0.5, 0.5, "Keine Forex-Preisdaten", ha='center', va='center', transform=ax1.transAxes)
-        ax1.legend(loc='upper left')
+        ax1.legend(loc='best', fontsize='small') # Geändert zu 'best' und kleinere Schrift
         ax1.grid(True)
 
         # Plot 2: Saisonalität
@@ -303,7 +303,7 @@ class SignalAnalyzer:
             ax2.set_ylabel('Durchschn. wöch. Return') # Geändert
         else:
             ax2.text(0.5, 0.5, "Keine Saisonalitätsdaten", ha='center', va='center', transform=ax2.transAxes)
-        ax2.legend(loc='upper left')
+        ax2.legend(loc='best', fontsize='small') # Geändert zu 'best' und kleinere Schrift
         ax2.grid(True)
 
         # Plot 3: GDP Momentum Daten
