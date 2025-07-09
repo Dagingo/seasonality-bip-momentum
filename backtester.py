@@ -138,7 +138,7 @@ class Backtester:
 
             if first_trade_day_benchmark:
                 self.log(f"Kaufe Benchmark {benchmark_ticker} am {first_trade_day_benchmark.strftime('%Y-%m-%d')}")
-                    benchmark_portfolio.open_long_position(benchmark_ticker, benchmark_portfolio.cash, first_trade_day_benchmark)
+                benchmark_portfolio.open_long_position(benchmark_ticker, benchmark_portfolio.cash, first_trade_day_benchmark)
             else:
                 self.log(f"Konnte keinen gültigen Handelstag für Benchmark-Kauf finden für {benchmark_ticker}.")
         else:
