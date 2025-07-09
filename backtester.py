@@ -127,14 +127,12 @@ class Backtester:
             self.log("Generierte final_signals Serie ist leer im Backtester.")
 
         # 3. Benchmark-Portfolio: Kaufe Benchmark-Ticker am ersten Handelstag und halte ihn
-        # _fetch_and_cache_prices wird automatisch von get_current_price/buy aufgerufen, falls nötig.
-        # Wir stellen hier sicher, dass der Ticker einmalig für den gesamten Zeitraum geladen wird.
+            # _fetch_and_cache_prices wird automatisch von get_current_price/open_long_position aufgerufen, falls nötig.
         if benchmark_ticker:
-            benchmark_portfolio._fetch_and_cache_prices(benchmark_ticker) # Pre-cache
+                # benchmark_portfolio._fetch_and_cache_prices(benchmark_ticker) # Explizites Pre-Caching ist gut, aber nicht zwingend hier
             first_trade_day_benchmark = None
             current_day_iter = start_date
             while current_day_iter <= end_date:
-                # get_current_price prüft im Cache oder lädt, wenn _fetch_and_cache_prices nicht explizit gerufen wurde
                 if benchmark_portfolio.get_current_price(benchmark_ticker, current_day_iter) is not None:
                     first_trade_day_benchmark = current_day_iter
                     break
@@ -142,7 +140,8 @@ class Backtester:
 
             if first_trade_day_benchmark:
                 self.log(f"Kaufe Benchmark {benchmark_ticker} am {first_trade_day_benchmark.strftime('%Y-%m-%d')}")
-                benchmark_portfolio.buy(benchmark_ticker, benchmark_portfolio.cash, first_trade_day_benchmark)
+                    # Verwende die umbenannte Methode
+                    benchmark_portfolio.open_long_position(benchmark_ticker, benchmark_portfolio.cash, first_trade_day_benchmark)
             else:
                 self.log(f"Konnte keinen gültigen Handelstag für Benchmark-Kauf finden für {benchmark_ticker}.")
         else:
@@ -171,32 +170,55 @@ class Backtester:
             self.log(f"Datum: {dt_current_date.strftime('%Y-%m-%d')}, Rohsignal: {signal_today}, Vorh. Positionen: {list(strategy_portfolio.positions.keys())}, Cash: {strategy_portfolio.cash:.2f}")
 
 
-            # Freitags-Verkaufslogik (vor neuen Käufen)
-            if dt_current_date.weekday() == 4:
-                if trading_ticker_yf in strategy_portfolio.positions:
-                    self.log(f"{dt_current_date.strftime('%Y-%m-%d')} (Freitag): Verkaufe {trading_ticker_yf} aufgrund Wochenschluss.")
-                    strategy_portfolio.sell(trading_ticker_yf, dt_current_date)
+            # Freitags-Logik: Alle offenen Positionen (Long oder Short) schließen
+            if dt_current_date.weekday() == 4: # Es ist ein Freitag
+                # Kopie der Ticker erstellen, da das Dictionary während der Iteration verändert wird
+                for ticker_in_positions in list(strategy_portfolio.positions.keys()):
+                    pos_details = strategy_portfolio.positions.get(ticker_in_positions)
+                    if pos_details: # Zusätzliche Sicherheitsprüfung
+                        if pos_details['type'] == 'long':
+                            self.log(f"{dt_current_date.strftime('%Y-%m-%d')} (Freitag): Schließe Long-Position in {ticker_in_positions} aufgrund Wochenschluss.")
+                            strategy_portfolio.close_long_position(ticker_in_positions, dt_current_date)
+                        elif pos_details['type'] == 'short':
+                            self.log(f"{dt_current_date.strftime('%Y-%m-%d')} (Freitag): Decke Short-Position in {ticker_in_positions} aufgrund Wochenschluss.")
+                            strategy_portfolio.cover_short_position(ticker_in_positions, dt_current_date)
 
-            if signal_today == 1:
-                if trading_ticker_yf not in strategy_portfolio.positions:
-                    amount_to_invest = strategy_portfolio.calculate_total_value(dt_current_date) * trade_amount_percent
-                    # Stelle sicher, dass amount_to_invest nicht negativ ist (falls total_value negativ wird)
-                    if amount_to_invest <= 0 :
-                        self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Kaufsignal für {trading_ticker_yf}, aber Investmentbetrag ({amount_to_invest:.2f}) ist nicht positiv.")
-                    elif strategy_portfolio.cash >= amount_to_invest :
-                        self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Kaufsignal für {trading_ticker_yf}. Investiere {amount_to_invest:.2f}.")
-                        strategy_portfolio.buy(trading_ticker_yf, amount_to_invest, dt_current_date)
+            # Auf Signale reagieren
+            # Wichtig: amount_to_invest sollte hier immer positiv sein für die Logik der open_short_position
+            amount_to_invest_abs = abs(strategy_portfolio.calculate_total_value(dt_current_date) * trade_amount_percent)
+            if amount_to_invest_abs <= 1e-6 : # Vermeide extrem kleine oder null Trades
+                 self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Investmentbetrag ({amount_to_invest_abs:.2f}) zu klein, kein Trade.")
+
+            else:
+                if signal_today == 1: # Kaufsignal (Long)
+                    # Wenn eine Short-Position besteht, diese zuerst schließen
+                    if trading_ticker_yf in strategy_portfolio.positions and strategy_portfolio.positions[trading_ticker_yf]['type'] == 'short':
+                        self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Kaufsignal für {trading_ticker_yf}. Schließe bestehende Short-Position zuerst.")
+                        strategy_portfolio.cover_short_position(trading_ticker_yf, dt_current_date)
+
+                    # Dann Long-Position eröffnen, falls keine (mehr) besteht
+                    if trading_ticker_yf not in strategy_portfolio.positions:
+                        if strategy_portfolio.cash >= amount_to_invest_abs: # Nur wenn genug Cash für Long
+                            self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Eröffne Long-Position für {trading_ticker_yf} mit {amount_to_invest_abs:.2f}.")
+                            strategy_portfolio.open_long_position(trading_ticker_yf, amount_to_invest_abs, dt_current_date)
+                        else:
+                            self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Kaufsignal für {trading_ticker_yf}, aber nicht genug Cash ({strategy_portfolio.cash:.2f}) für Investment ({amount_to_invest_abs:.2f}).")
                     else:
-                        self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Kaufsignal für {trading_ticker_yf}, aber nicht genug Cash ({strategy_portfolio.cash:.2f}) für Investment ({amount_to_invest:.2f}).")
-                else:
-                    self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Kaufsignal für {trading_ticker_yf}, aber bereits in Position.")
+                        self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Kaufsignal für {trading_ticker_yf}, aber bereits in Long-Position oder Short-Schließung fehlgeschlagen.")
 
-            elif signal_today == -1:
-                if trading_ticker_yf in strategy_portfolio.positions:
-                    self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Verkaufssignal für {trading_ticker_yf}. Verkaufe alle Anteile.")
-                    strategy_portfolio.sell(trading_ticker_yf, dt_current_date)
-                else:
-                    self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Verkaufssignal für {trading_ticker_yf}, aber keine Position vorhanden.")
+                elif signal_today == -1: # Verkaufssignal (Short)
+                    # Wenn eine Long-Position besteht, diese zuerst schließen
+                    if trading_ticker_yf in strategy_portfolio.positions and strategy_portfolio.positions[trading_ticker_yf]['type'] == 'long':
+                        self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Verkaufssignal für {trading_ticker_yf}. Schließe bestehende Long-Position zuerst.")
+                        strategy_portfolio.close_long_position(trading_ticker_yf, dt_current_date)
+
+                    # Dann Short-Position eröffnen, falls keine (mehr) besteht
+                    if trading_ticker_yf not in strategy_portfolio.positions:
+                        # Margin-Anforderungen werden hier nicht geprüft, open_short_position erhöht cash
+                        self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Eröffne Short-Position für {trading_ticker_yf} mit Nominalwert {amount_to_invest_abs:.2f}.")
+                        strategy_portfolio.open_short_position(trading_ticker_yf, amount_to_invest_abs, dt_current_date)
+                    else:
+                        self.log(f"{dt_current_date.strftime('%Y-%m-%d')}: Verkaufssignal für {trading_ticker_yf}, aber bereits in Short-Position oder Long-Schließung fehlgeschlagen.")
 
         # Stelle sicher, dass der letzte Wert am Enddatum des Backtests erfasst wird,
         # falls end_date nach dem letzten Handelstag in loop_days_pd liegt oder loop_days_pd leer ist.

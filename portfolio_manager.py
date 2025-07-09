@@ -5,7 +5,8 @@ class Portfolio:
     def __init__(self, initial_cash=10000.0, data_manager=None, backtest_start_date=None, backtest_end_date=None):
         self.initial_cash = initial_cash
         self.cash = initial_cash
-        self.positions = {}  # Ticker: {'shares': float, 'purchase_price': float, 'purchase_date': datetime}
+        # Positionsstruktur: Ticker: {'shares': float (abs value), 'entry_price': float, 'type': str ('long'/'short'), 'entry_date': datetime}
+        self.positions = {}
         self.history = []  # To track portfolio value over time: {'date': datetime, 'value': float}
         self.data_manager = data_manager
         self.price_cache = {} # Cache for historical price data: {ticker: pd.DataFrame}
@@ -109,86 +110,168 @@ class Portfolio:
         print(f"[Portfolio] Warning: Price for {ticker} on {date} not found. No data in cache.")
         return None # Return None if price cannot be found
 
-    def buy(self, ticker, amount_to_invest, date):
+    def open_long_position(self, ticker, amount_to_invest, date):
         """
-        Buys a ticker with a specific amount of cash on a given date.
+        Opens a new long position or adds to an existing one.
         """
         if self.cash < amount_to_invest:
-            print(f"Not enough cash to buy {ticker}. Available: {self.cash}, Needed: {amount_to_invest}")
+            print(f"[Portfolio] Not enough cash to open long {ticker}. Available: {self.cash:.2f}, Needed: {amount_to_invest:.2f}")
             return False
 
         price = self.get_current_price(ticker, date)
         if price is None or price <= 0:
-            print(f"Could not get a valid price for {ticker} on {date}.")
+            print(f"[Portfolio] Could not get a valid price for {ticker} on {date} to open long.")
             return False
 
         shares_to_buy = amount_to_invest / price
-        cost = shares_to_buy * price # This will be very close to amount_to_invest
+        cost = shares_to_buy * price
 
         if ticker in self.positions:
-            # Averaging down if position already exists
-            current_shares = self.positions[ticker]['shares']
-            current_total_cost = current_shares * self.positions[ticker]['purchase_price']
-            new_total_shares = current_shares + shares_to_buy
-            new_average_price = (current_total_cost + cost) / new_total_shares
-            self.positions[ticker]['shares'] = new_total_shares
-            self.positions[ticker]['purchase_price'] = new_average_price
+            if self.positions[ticker]['type'] == 'long':
+                # Add to existing long position (average up/down)
+                current_shares = self.positions[ticker]['shares']
+                current_total_cost = current_shares * self.positions[ticker]['entry_price']
+                new_total_shares = current_shares + shares_to_buy
+                new_average_price = (current_total_cost + cost) / new_total_shares
+                self.positions[ticker]['shares'] = new_total_shares
+                self.positions[ticker]['entry_price'] = new_average_price
+                self.positions[ticker]['entry_date'] = date # Update entry date to latest
+                print(f"[Portfolio] Added to long {ticker}: {shares_to_buy:.4f} shares at {price:.2f}. New avg price: {new_average_price:.2f}")
+            else: # Existing position is short
+                print(f"[Portfolio] Cannot open long for {ticker}; short position exists. Close short first.")
+                return False
         else:
             self.positions[ticker] = {
                 'shares': shares_to_buy,
-                'purchase_price': price,
-                'purchase_date': date
+                'entry_price': price,
+                'type': 'long',
+                'entry_date': date
             }
+            print(f"[Portfolio] Opened long {ticker}: {shares_to_buy:.4f} shares at {price:.2f}")
 
         self.cash -= cost
-        self.record_transaction(date, 'BUY', ticker, shares_to_buy, price)
-        print(f"{date}: Bought {shares_to_buy:.4f} shares of {ticker} at {price:.2f}. Cash: {self.cash:.2f}")
+        self.record_transaction(date, 'OPEN_LONG', ticker, shares_to_buy, price)
         return True
 
-    def sell(self, ticker, date, shares_to_sell=None):
+    def close_long_position(self, ticker, date, shares_to_sell=None):
         """
-        Sells a ticker on a given date.
-        If shares_to_sell is None, sells all shares of the ticker.
+        Closes an existing long position fully or partially.
         """
-        if ticker not in self.positions:
-            print(f"No position in {ticker} to sell.")
+        if ticker not in self.positions or self.positions[ticker]['type'] != 'long':
+            print(f"[Portfolio] No long position in {ticker} to close.")
             return False
 
         price = self.get_current_price(ticker, date)
         if price is None or price <= 0:
-            print(f"Could not get a valid price for {ticker} to sell on {date}.")
+            print(f"[Portfolio] Could not get a valid price for {ticker} on {date} to close long.")
             return False
 
-        if shares_to_sell is None or shares_to_sell >= self.positions[ticker]['shares']:
-            shares_sold = self.positions[ticker]['shares']
+        position_details = self.positions[ticker]
+
+        if shares_to_sell is None or shares_to_sell >= position_details['shares']:
+            shares_sold = position_details['shares']
             del self.positions[ticker]
+            print(f"[Portfolio] Closed entire long position in {ticker}: {shares_sold:.4f} shares at {price:.2f}")
         else:
             shares_sold = shares_to_sell
             self.positions[ticker]['shares'] -= shares_sold
-            if self.positions[ticker]['shares'] <= 1e-9: # Handle potential float precision issues
+            print(f"[Portfolio] Partially closed long {ticker}: Sold {shares_sold:.4f} shares at {price:.2f}. Remaining: {self.positions[ticker]['shares']:.4f}")
+            if self.positions[ticker]['shares'] <= 1e-9: # Handle float precision
                  del self.positions[ticker]
-
+                 print(f"[Portfolio] Remaining shares for {ticker} negligible, position fully closed.")
 
         proceeds = shares_sold * price
         self.cash += proceeds
-        self.record_transaction(date, 'SELL', ticker, shares_sold, price)
-        print(f"{date}: Sold {shares_sold:.4f} shares of {ticker} at {price:.2f}. Cash: {self.cash:.2f}")
+        self.record_transaction(date, 'CLOSE_LONG', ticker, shares_sold, price)
+        return True
+
+    def open_short_position(self, ticker, amount_to_invest, date):
+        """
+        Opens a new short position. Amount_to_invest determines the notional value of the short.
+        """
+        # For short selling, we don't check cash < amount_to_invest in the same way,
+        # as shorting initially increases cash. Margin would be a real-world check.
+        # Here, we assume margin is sufficient.
+        if ticker in self.positions:
+            print(f"[Portfolio] Cannot open short for {ticker}; position already exists ({self.positions[ticker]['type']}). Close existing first.")
+            return False
+
+        price = self.get_current_price(ticker, date)
+        if price is None or price <= 0:
+            print(f"[Portfolio] Could not get a valid price for {ticker} on {date} to open short.")
+            return False
+
+        shares_to_short = amount_to_invest / price
+        proceeds = shares_to_short * price # Cash received from shorting
+
+        self.positions[ticker] = {
+            'shares': shares_to_short, # Store as positive number, 'type' indicates direction
+            'entry_price': price,
+            'type': 'short',
+            'entry_date': date
+        }
+        self.cash += proceeds # Cash increases from short sale
+        self.record_transaction(date, 'OPEN_SHORT', ticker, shares_to_short, price)
+        print(f"[Portfolio] Opened short {ticker}: {shares_to_short:.4f} shares at {price:.2f}. Cash: {self.cash:.2f}")
+        return True
+
+    def cover_short_position(self, ticker, date, shares_to_cover=None):
+        """
+        Covers an existing short position fully or partially.
+        """
+        if ticker not in self.positions or self.positions[ticker]['type'] != 'short':
+            print(f"[Portfolio] No short position in {ticker} to cover.")
+            return False
+
+        price = self.get_current_price(ticker, date)
+        if price is None or price <= 0:
+            print(f"[Portfolio] Could not get a valid price for {ticker} on {date} to cover short.")
+            return False
+
+        position_details = self.positions[ticker]
+
+        if shares_to_cover is None or shares_to_cover >= position_details['shares']:
+            shares_bought_back = position_details['shares']
+            del self.positions[ticker]
+            print(f"[Portfolio] Covered entire short position in {ticker}: Bought back {shares_bought_back:.4f} shares at {price:.2f}")
+        else:
+            shares_bought_back = shares_to_cover
+            self.positions[ticker]['shares'] -= shares_bought_back
+            print(f"[Portfolio] Partially covered short {ticker}: Bought back {shares_bought_back:.4f} shares at {price:.2f}. Remaining short: {self.positions[ticker]['shares']:.4f}")
+            if self.positions[ticker]['shares'] <= 1e-9: # Handle float precision
+                 del self.positions[ticker]
+                 print(f"[Portfolio] Remaining short shares for {ticker} negligible, position fully covered.")
+
+        cost = shares_bought_back * price
+        self.cash -= cost # Cash decreases to buy back shares
+        self.record_transaction(date, 'COVER_SHORT', ticker, shares_bought_back, price)
         return True
 
     def calculate_total_value(self, current_date):
         """
-        Calculates the total value of the portfolio (cash + value of all positions).
+        Calculates the total mark-to-market value of the portfolio.
+        For short positions, this means cash + (entry_price - current_price) * shares.
         """
         total_value = self.cash
         for ticker, details in self.positions.items():
-            price = self.get_current_price(ticker, current_date)
-            if price is not None:
-                total_value += details['shares'] * price
-            else:
-                # If price is not available, use purchase price (conservative)
-                # This might not be ideal, as it doesn't reflect current market conditions.
-                print(f"Warning: Using purchase price for {ticker} as current price for value calculation on {current_date} is unavailable.")
-                total_value += details['shares'] * details['purchase_price']
+            current_price = self.get_current_price(ticker, current_date)
+            if current_price is None: # If price unavailable, use entry price (conservative for longs, potentially problematic for shorts)
+                print(f"[Portfolio] Warning: Using entry price for {ticker} as current price for value calculation on {current_date} is unavailable.")
+                current_price = details['entry_price']
+
+            if details['type'] == 'long':
+                total_value += details['shares'] * current_price
+            elif details['type'] == 'short':
+                # Cash already reflects proceeds from short sale.
+                # Value change of short position = (entry_price - current_price) * shares
+                # So, add this change to the cash.
+                # Or, simpler: initial_cash_from_short + (entry_price - current_price) * shares
+                # The cash component already has the (shares * entry_price) from the short sale.
+                # So, the liability is (shares * current_price).
+                # The value of the short position part is (shares * entry_price) - (shares * current_price)
+                # total_value = self.cash (which includes initial short proceeds) + sum_long_values - sum_current_cost_to_cover_shorts
+                # This is equivalent to:
+                total_value += (details['entry_price'] - current_price) * details['shares']
         return total_value
 
     def record_portfolio_value(self, date):
