@@ -127,9 +127,7 @@ class Backtester:
             self.log("Generierte final_signals Serie ist leer im Backtester.")
 
         # 3. Benchmark-Portfolio: Kaufe Benchmark-Ticker am ersten Handelstag und halte ihn
-            # _fetch_and_cache_prices wird automatisch von get_current_price/open_long_position aufgerufen, falls nötig.
         if benchmark_ticker:
-                # benchmark_portfolio._fetch_and_cache_prices(benchmark_ticker) # Explizites Pre-Caching ist gut, aber nicht zwingend hier
             first_trade_day_benchmark = None
             current_day_iter = start_date
             while current_day_iter <= end_date:
@@ -140,13 +138,11 @@ class Backtester:
 
             if first_trade_day_benchmark:
                 self.log(f"Kaufe Benchmark {benchmark_ticker} am {first_trade_day_benchmark.strftime('%Y-%m-%d')}")
-                    # Verwende die umbenannte Methode
-                    benchmark_portfolio.open_long_position(benchmark_ticker, benchmark_portfolio.cash, first_trade_day_benchmark) # Korrigierte Einrückung
+                    benchmark_portfolio.open_long_position(benchmark_ticker, benchmark_portfolio.cash, first_trade_day_benchmark)
             else:
                 self.log(f"Konnte keinen gültigen Handelstag für Benchmark-Kauf finden für {benchmark_ticker}.")
         else:
             self.log("Kein Benchmark-Ticker angegeben. Benchmark-Portfolio bleibt leer.")
-
 
         # 4. Iteriere über den Handelszeitraum
         self.log("Starte tägliche Backtesting-Schleife...")
